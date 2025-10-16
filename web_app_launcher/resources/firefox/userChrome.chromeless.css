@@ -1,0 +1,16 @@
+/* web-app-launcher: chromeless */
+#nav-bar {
+  display: none !important;
+}
+
+#TabsToolbar {
+  display: none !important;
+}
+
+#PersonalToolbar {
+  display: none !important;
+}
+
+#titlebar-spacer[type="pre-tabs"] {
+  display: none !important;
+}

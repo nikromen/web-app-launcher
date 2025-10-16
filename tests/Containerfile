@@ -1,0 +1,19 @@
+FROM fedora:latest
+
+RUN dnf install -y \
+    dbus-libs \
+    fontconfig \
+    git \
+    qt6-qtsvg \
+    libX11-xcb \
+    libxcb \
+    xcb-util-cursor \
+    libxkbcommon \
+    libxkbcommon-x11 \
+    mesa-libEGL \
+    mesa-libGL \
+    uv \
+    && dnf clean all
+
+ENV QT_QPA_PLATFORM=offscreen
+WORKDIR /app

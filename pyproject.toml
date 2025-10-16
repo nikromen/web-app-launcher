@@ -1,0 +1,66 @@
+[project]
+name = "web-app-launcher"
+version = "0.1.0"
+description = "A Qt-based web application launcher with browser profiles and system tray support"
+authors = [
+    {name = "Jiri Kyjovsky", email = "j1.kyjvosky@gmail.com"},
+]
+requires-python = ">=3.10"
+keywords = ["Web App Launcher", "Web Apps"]
+license = "GPL-3.0-or-later"
+dependencies = [
+    "PySide6>=6.6.0",
+    "beautifulsoup4>=4.12.0",
+    "requests>=2.31.0",
+    "Pillow>=10.0.0",
+    "pydantic>=2.5.0",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.0.0",
+    "mypy>=1.5.0",
+    "pytest>=8.0.0",
+    "ruff>=0.1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[project.scripts]
+web-app-launcher = "web_app_launcher.main:entry_point"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatchling.build.targets.wheel]
+packages = ["web_app_launcher"]
+
+[tool.hatchling.build.targets.wheel.force-include]
+"web_app_launcher/resources" = "web_app_launcher/resources"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "PySide6.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "web_app_launcher.controllers.*"
+disable_error_code = ["no-redef", "method-assign"]
+
+[tool.pyside6-project]
+files = [
+    "web_app_launcher/qml/MainWindow.qml",
+    "web_app_launcher/qml/AppDialog.qml",
+    "web_app_launcher/qml/ProfileDialog.qml",
+    "web_app_launcher/qml/ProfileManagerDialog.qml",
+    "web_app_launcher/qml/IconPickerDialog.qml",
+    "web_app_launcher/qml/ShortcutsDialog.qml",
+    "web_app_launcher/qml/AboutDialog.qml",
+]

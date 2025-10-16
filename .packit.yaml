@@ -1,0 +1,42 @@
+upstream_project_url: https://github.com/nikromen/webapp-launcher
+specfile_path: files/web-app-launcher.spec
+downstream_package_name: web-app-launcher
+upstream_package_name: web_app_launcher
+
+srpm_build_deps:
+  - python3-hatchling
+
+actions:
+  create-archive:
+    - python3 -m hatchling build -t sdist
+    - bash -c "ls dist/web_app_launcher-*.tar.gz"
+  get-current-version:
+    - python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
+
+jobs:
+  - job: copr_build
+    trigger: pull_request
+    targets:
+      - fedora-all
+
+  - job: copr_build
+    trigger: commit
+    targets:
+      - fedora-all
+    owner: "nikromen"
+    project: "web-app-launcher"
+    branch: main
+    list_on_homepage: True
+    preserve_project: True
+    actions:
+      post-modifications:
+        - bash -c "sed -i '1i%global git_build 1' files/web-app-launcher.spec"
+
+  - job: copr_build
+    trigger: release
+    targets:
+      - fedora-all
+    owner: "nikromen"
+    project: "web-app-launcher"
+    list_on_homepage: True
+    preserve_project: True
