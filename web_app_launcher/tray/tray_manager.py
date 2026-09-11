@@ -3,7 +3,6 @@ import os
 import signal
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon
@@ -11,7 +10,7 @@ from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from web_app_launcher.constants import DEFAULT_ICON_PATH
 from web_app_launcher.models import BrowserProfile, WebApp
-from web_app_launcher.utils.tray_script_runner import run_tray_script
+from web_app_launcher.utils.tray_script_runner import run_tray_command
 from web_app_launcher.utils.window_activator import try_activate_pid
 
 logger = logging.getLogger(__name__)
@@ -92,15 +91,14 @@ class TrayManager(QObject):
         profile = entry.profile
         pid = entry.process.pid
 
-        if app.show_script and app.show_script.exists():
-            if run_tray_script(app, profile, app.show_script, "show", pid):
-                return
+        if app.show_script and run_tray_command(app, profile, app.show_script, "show", pid):
+            return
 
         if try_activate_pid(pid):
             return
 
         logger.info(
-            "Show failed for %s (PID %s). Configure a show script in app settings for Wayland.",
+            "Show failed for %s (PID %s). Configure a show command in app settings for Wayland.",
             app.name,
             pid,
         )
@@ -160,24 +158,24 @@ class TrayManager(QObject):
         if app.tray_scripts:
             menu.addSeparator()
             for script in app.tray_scripts:
-                if not script.path.exists():
+                if not script.command.strip():
                     continue
 
                 action = QAction(script.name, menu)
                 action.triggered.connect(
-                    lambda checked=False, s=script.path: self._run_user_script(app, s),
+                    lambda checked=False, cmd=script.command: self._run_user_script(app, cmd),
                 )
                 menu.addAction(action)
 
         return menu
 
-    def _run_user_script(self, app: WebApp, script_path: Path) -> None:
+    def _run_user_script(self, app: WebApp, command: str) -> None:
         entry = self._running.get(app.app_uuid)
         if not entry:
             return
 
         pid = entry.process.pid
-        run_tray_script(app, entry.profile, script_path, "script", pid)
+        run_tray_command(app, entry.profile, command, "script", pid)
 
     def _icon_for_app(self, app: WebApp) -> QIcon:
         if app.icon_path and app.icon_path.exists():

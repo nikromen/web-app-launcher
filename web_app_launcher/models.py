@@ -24,7 +24,7 @@ class Browser(WebAppLauncherBaseModel):
 
 class TrayScript(WebAppLauncherBaseModel):
     name: str = Field(..., min_length=1, description="Display name in tray menu")
-    path: Path = Field(..., description="Path to executable script")
+    command: str = Field(default="", description="Shell command run via bash -c")
 
 
 class BrowserProfile(WebAppLauncherBaseModel):
@@ -74,13 +74,13 @@ class WebApp(WebAppLauncherBaseModel):
         default=False,
         description="Show a system tray icon while this application is running",
     )
-    show_script: Optional[Path] = Field(
+    show_script: Optional[str] = Field(
         default=None,
-        description="Optional script to show/focus the app window (WEBAPP_ACTION=show)",
+        description="Optional shell command to show/focus the app window (WEBAPP_ACTION=show)",
     )
     tray_scripts: list[TrayScript] = Field(
         default_factory=list,
-        description="Custom scripts shown in the tray menu while the app is running",
+        description="Custom shell commands shown in the tray menu while the app is running",
     )
     extra_args: list[str] = Field(
         default_factory=list,

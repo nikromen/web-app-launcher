@@ -90,7 +90,7 @@ class DialogController(QObject):
     showNavigationBarChanged = Signal()
     trayEnabledChanged = Signal()
     extraArgsChanged = Signal()
-    showScriptPathChanged = Signal()
+    showScriptCommandChanged = Signal()
     trayScriptsChanged = Signal()
 
     isProfileEditModeChanged = Signal()
@@ -133,7 +133,7 @@ class DialogController(QObject):
         self._show_navigation_bar = True
         self._tray_enabled = False
         self._extra_args = ""
-        self._show_script_path = ""
+        self._show_script_command = ""
         self._tray_scripts: list[TrayScript] = []
 
         self._profile: Optional[BrowserProfile] = None
@@ -276,19 +276,19 @@ class DialogController(QObject):
             self._extra_args = value
             self.extraArgsChanged.emit()
 
-    @Property(str, notify=showScriptPathChanged)
-    def showScriptPath(self):
-        return self._show_script_path
+    @Property(str, notify=showScriptCommandChanged)
+    def showScriptCommand(self):
+        return self._show_script_command
 
-    @showScriptPath.setter
-    def showScriptPath(self, value: str):
-        if self._show_script_path != value:
-            self._show_script_path = value
-            self.showScriptPathChanged.emit()
+    @showScriptCommand.setter
+    def showScriptCommand(self, value: str):
+        if self._show_script_command != value:
+            self._show_script_command = value
+            self.showScriptCommandChanged.emit()
 
     def _refresh_tray_script_model(self) -> None:
         items = [
-            {"name": script.name, "uuid": str(index), "description": str(script.path)}
+            {"name": script.name, "uuid": str(index), "description": script.command}
             for index, script in enumerate(self._tray_scripts)
         ]
         self._tray_script_list_model.update_items(items)
@@ -356,7 +356,7 @@ class DialogController(QObject):
             else:
                 self.selectedProfileUuid = self._app.profile_uuid
             self.trayEnabled = self._app.tray_enabled
-            self.showScriptPath = str(self._app.show_script) if self._app.show_script else ""
+            self.showScriptCommand = self._app.show_script or ""
             self._tray_scripts = list(self._app.tray_scripts)
         else:
             self._is_app_edit_mode = False
@@ -369,7 +369,7 @@ class DialogController(QObject):
             self.selectedBrowserKey = self._browser_list_model.get_value_by_index(0)
             self.selectedProfileUuid = self._filtered_profile_model.get_value_by_index(0)
             self.trayEnabled = False
-            self.showScriptPath = ""
+            self.showScriptCommand = ""
             self._tray_scripts = []
 
         self._refresh_tray_script_model()
@@ -493,8 +493,12 @@ class DialogController(QObject):
             "show_navigation_bar": self._show_navigation_bar,
             "tray_enabled": self._tray_enabled,
             "extra_args": [arg.strip() for arg in self._extra_args.split() if arg.strip()],
-            "show_script": Path(self._show_script_path) if self._show_script_path else None,
-            "tray_scripts": list(self._tray_scripts),
+            "show_script": self._show_script_command.strip() or None,
+            "tray_scripts": [
+                TrayScript(name=script.name.strip(), command=script.command.strip())
+                for script in self._tray_scripts
+                if script.name.strip() and script.command.strip()
+            ],
         }
 
         apps = self.config.load_apps()
@@ -707,34 +711,17 @@ class DialogController(QObject):
         self._refresh_icon_path()
 
     @Slot()
-    def choose_show_script(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            None,
-            "Choose Show Script",
-            str(Path.home()),
-            "Scripts (*.sh);;All Files (*)",
-        )
-        if file_path:
-            self.showScriptPath = file_path
-
-    @Slot()
-    def clear_show_script(self):
-        self.showScriptPath = ""
-
-    @Slot()
     def add_tray_script(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            None,
-            "Choose Tray Script",
-            str(Path.home()),
-            "Scripts (*.sh);;All Files (*)",
-        )
-        if not file_path:
-            return
-
-        name = Path(file_path).stem.replace("_", " ").replace("-", " ").title()
-        self._tray_scripts.append(TrayScript(name=name, path=Path(file_path)))
+        self._tray_scripts.append(TrayScript(name="New Action", command=""))
         self._refresh_tray_script_model()
+
+    @Slot(int, str, str)
+    def update_tray_script_at_index(self, index: int, name: str, command: str):
+        if 0 <= index < len(self._tray_scripts):
+            self._tray_scripts[index] = TrayScript(
+                name=name.strip() or "New Action",
+                command=command.strip(),
+            )
 
     @Slot(int)
     def remove_tray_script_at_index(self, index: int):

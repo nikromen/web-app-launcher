@@ -1,7 +1,6 @@
 import logging
 import os
 import subprocess
-from pathlib import Path
 
 from web_app_launcher.models import BrowserProfile, WebApp
 
@@ -25,31 +24,23 @@ def build_tray_env(
     return env
 
 
-def run_tray_script(
+def run_tray_command(
     app: WebApp,
     profile: BrowserProfile,
-    script_path: Path,
+    command: str,
     action: str,
     pid: int | None = None,
 ) -> bool:
-    if not script_path.exists():
-        logger.warning("Tray script not found: %s", script_path)
+    command = command.strip()
+    if not command:
         return False
 
     env = build_tray_env(app, profile, action, pid)
-    logger.debug("Running tray script %s for %s (action=%s)", script_path, app.name, action)
-
-    if os.access(script_path, os.X_OK):
-        command = [str(script_path)]
-    elif script_path.suffix == ".sh":
-        command = ["bash", str(script_path)]
-    else:
-        logger.warning("Tray script is not executable: %s", script_path)
-        return False
+    logger.debug("Running tray command for %s (action=%s): %s", app.name, action, command)
 
     try:
         subprocess.Popen(
-            command,
+            ["bash", "-c", command],
             env=env,
             start_new_session=True,
             stdout=subprocess.DEVNULL,
@@ -57,5 +48,5 @@ def run_tray_script(
         )
         return True
     except OSError as exc:
-        logger.error("Failed to run tray script %s: %s", script_path, exc)
+        logger.error("Failed to run tray command for %s: %s", app.name, exc)
         return False

@@ -259,29 +259,16 @@ Dialog {
                             spacing: 4
                             Layout.alignment: Qt.AlignVCenter
                             Layout.minimumWidth: 120
-                            Label { text: "Show script" }
+                            Label { text: "Show command" }
                             HelpTip {
-                                tipText: "Optional script run first when you choose Show from the tray. Built-in window focus is used only if no show script is set or it fails. Often needed on Wayland. Receives WEBAPP_ACTION=show and WEBAPP_UUID, WEBAPP_NAME, WEBAPP_URL, WEBAPP_PID, and WEBAPP_PROFILE_PATH."
+                                tipText: "Optional shell command run via bash -c when you choose Show from the tray. Built-in window focus is used only if this is empty or the command fails. Often needed on Wayland. Environment: WEBAPP_ACTION=show, WEBAPP_UUID, WEBAPP_NAME, WEBAPP_URL, WEBAPP_PID, WEBAPP_PROFILE_PATH."
                             }
                         }
-                        RowLayout {
+                        TextField {
                             Layout.fillWidth: true
-                            TextField {
-                                Layout.fillWidth: true
-                                readOnly: true
-                                placeholderText: "Optional script (WEBAPP_ACTION=show)"
-                                text: dialogController.showScriptPath
-                            }
-                            Button {
-                                text: "Browse..."
-                                onClicked: dialogController.choose_show_script()
-                            }
-                            Button {
-                                text: "Clear"
-                                flat: true
-                                enabled: dialogController.showScriptPath.length > 0
-                                onClicked: dialogController.clear_show_script()
-                            }
+                            placeholderText: 'e.g. wmctrl -a "$WEBAPP_NAME"'
+                            text: dialogController.showScriptCommand
+                            onTextChanged: dialogController.showScriptCommand = text
                         }
                     }
 
@@ -298,11 +285,11 @@ Dialog {
                                 font.weight: Font.DemiBold
                             }
                             HelpTip {
-                                tipText: "Executable scripts or .sh files added to the tray menu. They run with WEBAPP_ACTION=script and the same WEBAPP_* environment variables as the show script."
+                                tipText: "Shell commands added to the tray menu. Each runs via bash -c with WEBAPP_ACTION=script and the same WEBAPP_* environment variables as the show command."
                             }
                         }
                         Button {
-                            text: "Add Script"
+                            text: "Add Action"
                             icon.name: "list-add"
                             onClicked: dialogController.add_tray_script()
                         }
@@ -310,7 +297,7 @@ Dialog {
 
                     Frame {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: Math.min(160, trayScriptsList.contentHeight + 16)
+                        Layout.preferredHeight: Math.min(240, trayScriptsList.contentHeight + 16)
                         visible: trayEnabledCheck.checked && trayScriptsList.count > 0
                         enabled: trayEnabledCheck.checked
 
@@ -318,35 +305,59 @@ Dialog {
                             id: trayScriptsList
                             anchors.fill: parent
                             anchors.margins: 8
-                            spacing: 6
+                            spacing: 10
                             clip: true
                             model: dialogController.trayScriptListModel
 
-                            delegate: RowLayout {
+                            delegate: ColumnLayout {
                                 required property string name
                                 required property string description
                                 required property int index
 
                                 width: trayScriptsList.width
-                                spacing: 8
+                                spacing: 6
 
-                                Label {
-                                    text: name
-                                    font.weight: Font.Medium
-                                    Layout.preferredWidth: 140
-                                    elide: Text.ElideRight
-                                }
-                                Label {
-                                    text: description
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    opacity: 0.75
-                                    font.pixelSize: 11
-                                    elide: Text.ElideMiddle
+                                    spacing: 8
+
+                                    Label {
+                                        text: "Name"
+                                        Layout.preferredWidth: 56
+                                    }
+                                    TextField {
+                                        id: actionNameField
+                                        Layout.fillWidth: true
+                                        text: name
+                                        placeholderText: "Menu label"
+                                        onTextChanged: dialogController.update_tray_script_at_index(
+                                            index, text, actionCommandField.text)
+                                    }
+                                    Button {
+                                        text: "Remove"
+                                        flat: true
+                                        onClicked: dialogController.remove_tray_script_at_index(index)
+                                    }
                                 }
-                                Button {
-                                    text: "Remove"
-                                    flat: true
-                                    onClicked: dialogController.remove_tray_script_at_index(index)
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Label {
+                                        text: "Command"
+                                        Layout.preferredWidth: 56
+                                        Layout.alignment: Qt.AlignTop
+                                        topPadding: 8
+                                    }
+                                    TextField {
+                                        id: actionCommandField
+                                        Layout.fillWidth: true
+                                        text: description
+                                        placeholderText: 'e.g. notify-send "Hello"'
+                                        onTextChanged: dialogController.update_tray_script_at_index(
+                                            index, actionNameField.text, text)
+                                    }
                                 }
                             }
                         }
