@@ -8,13 +8,21 @@ from typing import Optional
 from PySide6.QtCore import Property, QAbstractListModel, QObject, Qt, QUrl, Signal, Slot
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-from web_app_launcher.models import BrowserProfile, TrayScript, WebApp, normalize_url
+from web_app_launcher.models import (
+    EMPTY_PROFILE_TEMPLATE,
+    BrowserProfile,
+    ProfileMode,
+    TrayScript,
+    WebApp,
+    normalize_url,
+)
 from web_app_launcher.utils.browser_manager import BrowserManager
 from web_app_launcher.utils.config_manager import ConfigManager
 from web_app_launcher.utils.desktop_file_manager import DesktopFileManager
 from web_app_launcher.utils.firefox_chrome import ensure_profile_chrome_for_app
 from web_app_launcher.utils.metadata_fetcher import MetadataFetcher
 from web_app_launcher.utils.path_manager import PathManager
+from web_app_launcher.utils.profile_fork import copy_profile_tree, create_empty_profile
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +94,10 @@ class DialogController(QObject):
     iconPathChanged = Signal()
     selectedBrowserKeyChanged = Signal()
     selectedProfileUuidChanged = Signal()
+    profileModeChanged = Signal()
+    profileModeDescriptionChanged = Signal()
+    profileSourceEnabledChanged = Signal()
+    dedicatedProfileSummaryChanged = Signal()
     incognitoModeChanged = Signal()
     showNavigationBarChanged = Signal()
     trayEnabledChanged = Signal()
@@ -117,6 +129,7 @@ class DialogController(QObject):
         self._browser_list_model = SimpleListModel(self)
         self._profile_list_model = SimpleListModel(self)
         self._filtered_profile_model = SimpleListModel(self)
+        self._profile_mode_list_model = SimpleListModel(self)
         self._tray_script_list_model = SimpleListModel(self)
 
         self._app: Optional[WebApp] = None
@@ -129,6 +142,7 @@ class DialogController(QObject):
         self._app_description = ""
         self._selected_browser_key = ""
         self._selected_profile_uuid = ""
+        self._profile_mode = ProfileMode.DEDICATED.value
         self._incognito_mode = False
         self._show_navigation_bar = True
         self._tray_enabled = False
@@ -143,6 +157,7 @@ class DialogController(QObject):
         self._profile_browser_key = ""
 
         self._populate_browser_list()
+        self._populate_profile_mode_list()
         self.refresh_all_profiles()
 
     @Property(QObject, constant=True)
@@ -156,6 +171,10 @@ class DialogController(QObject):
     @Property(QObject, constant=True)
     def filteredProfileModel(self):
         return self._filtered_profile_model
+
+    @Property(QObject, constant=True)
+    def profileModeListModel(self):
+        return self._profile_mode_list_model
 
     @Property(QObject, constant=True)
     def trayScriptListModel(self):
@@ -235,6 +254,80 @@ class DialogController(QObject):
         if self._selected_profile_uuid != uuid:
             self._selected_profile_uuid = uuid
             self.selectedProfileUuidChanged.emit()
+            self.profileModeDescriptionChanged.emit()
+
+    @Property(str, notify=profileModeChanged)
+    def profileMode(self):
+        return self._profile_mode
+
+    @profileMode.setter
+    def profileMode(self, value: str):
+        if self._profile_mode != value:
+            self._profile_mode = value
+            self.profileModeChanged.emit()
+            self.profileModeDescriptionChanged.emit()
+            self.profileSourceEnabledChanged.emit()
+            self.dedicatedProfileSummaryChanged.emit()
+            self._filter_profiles()
+            if self._filtered_profile_model.get_index_by_value(self._selected_profile_uuid) < 0:
+                first_profile = self._filtered_profile_model.get_value_by_index(0)
+                if first_profile:
+                    self.selectedProfileUuid = first_profile
+
+    @Property(str, notify=profileModeDescriptionChanged)
+    def profileModeDescription(self):
+        if self._profile_mode == ProfileMode.SHARED.value:
+            return (
+                "This app reads and writes the selected profile directly. "
+                "Other apps using the same profile see the same cookies and extensions."
+            )
+        if self._profile_mode == ProfileMode.EPHEMERAL.value:
+            return (
+                "The browser runs in a temporary copy. Closing the app removes cookies "
+                "and session changes from this run. Update the template profile in "
+                "Profile Manager to change what the next session starts with."
+            )
+        if self._is_app_edit_mode and self._app and self._app.profile_mode == ProfileMode.DEDICATED:
+            profile = self._all_profiles.get(self._app.profile_uuid)
+            if profile:
+                return (
+                    f"This app uses its dedicated profile '{profile.name}'. "
+                    "Switch profile mode and save again to recreate it from a different template."
+                )
+        if self._selected_profile_uuid == EMPTY_PROFILE_TEMPLATE:
+            return "A new empty profile will be created for this app when you save."
+        return (
+            "A private copy of the selected profile will be created for this app when you save. "
+            "Changes stay with this app only."
+        )
+
+    @Property(bool, notify=profileSourceEnabledChanged)
+    def profileSourceEnabled(self):
+        editing_dedicated = (
+            self._is_app_edit_mode
+            and self._app is not None
+            and self._app.profile_mode == ProfileMode.DEDICATED
+            and self._profile_mode == ProfileMode.DEDICATED.value
+        )
+        return not editing_dedicated
+
+    @Property(str, notify=dedicatedProfileSummaryChanged)
+    def dedicatedProfileSummary(self):
+        if not self._is_app_edit_mode or not self._app:
+            return ""
+        if self._app.profile_mode != ProfileMode.DEDICATED:
+            return ""
+
+        profile = self._all_profiles.get(self._app.profile_uuid)
+        if not profile:
+            return ""
+
+        if profile.forked_from_profile_uuid:
+            template = self._all_profiles.get(profile.forked_from_profile_uuid)
+            template_name = template.name if template else "unknown profile"
+            return f"Dedicated profile '{profile.name}' (copied from {template_name})"
+
+        return f"Dedicated profile '{profile.name}' (started empty)"
 
     @Property(bool, notify=incognitoModeChanged)
     def incognitoMode(self):
@@ -350,10 +443,20 @@ class DialogController(QObject):
             self.showNavigationBar = self._app.show_navigation_bar
             self.extraArgs = " ".join(self._app.extra_args) if self._app.extra_args else ""
             app_profile = self._all_profiles.get(self._app.profile_uuid)
-            self.selectedBrowserKey = app_profile.browser.key if app_profile else ""
-            if app_profile and app_profile.is_default_profile:
-                self.selectedProfileUuid = app_profile.browser.key
+            self.profileMode = self._app.profile_mode.value
+            if self._app.profile_mode == ProfileMode.DEDICATED:
+                self.selectedBrowserKey = app_profile.browser.key if app_profile else ""
+                self.selectedProfileUuid = (
+                    app_profile.forked_from_profile_uuid or EMPTY_PROFILE_TEMPLATE
+                    if app_profile
+                    else EMPTY_PROFILE_TEMPLATE
+                )
+            elif self._app.profile_mode == ProfileMode.EPHEMERAL:
+                template = self._all_profiles.get(self._app.profile_uuid)
+                self.selectedBrowserKey = template.browser.key if template else ""
+                self.selectedProfileUuid = self._app.profile_uuid
             else:
+                self.selectedBrowserKey = app_profile.browser.key if app_profile else ""
                 self.selectedProfileUuid = self._app.profile_uuid
             self.trayEnabled = self._app.tray_enabled
             self.showScriptCommand = self._app.show_script or ""
@@ -367,7 +470,8 @@ class DialogController(QObject):
             self.showNavigationBar = True
             self.extraArgs = ""
             self.selectedBrowserKey = self._browser_list_model.get_value_by_index(0)
-            self.selectedProfileUuid = self._filtered_profile_model.get_value_by_index(0)
+            self.profileMode = ProfileMode.DEDICATED.value
+            self.selectedProfileUuid = EMPTY_PROFILE_TEMPLATE
             self.trayEnabled = False
             self.showScriptCommand = ""
             self._tray_scripts = []
@@ -383,6 +487,9 @@ class DialogController(QObject):
         self.trayEnabledChanged.emit()
         self.extraArgsChanged.emit()
         self.selectedProfileUuidChanged.emit()
+        self.profileModeDescriptionChanged.emit()
+        self.profileSourceEnabledChanged.emit()
+        self.dedicatedProfileSummaryChanged.emit()
 
     @Slot()
     def prepare_profile_manager(self):
@@ -427,34 +534,88 @@ class DialogController(QObject):
             return False
 
         profile_key = self.selectedProfileUuid
-        if not profile_key:
-            QMessageBox.warning(None, "Error", "Please select a profile.")
-            return False
+        profile_mode = ProfileMode(self._profile_mode)
+        app_uuid = self._app.app_uuid if self._app else str(uuid.uuid4())
 
         profile: Optional[BrowserProfile] = None
-        if profile_key in self._all_profiles:
-            profile = self._all_profiles[profile_key]
-        else:
-            browser = self.browsers.installed_browsers.get(profile_key)
-            if not browser:
-                QMessageBox.warning(None, "Error", f"Invalid browser key: {profile_key}")
-                return False
+        profile_uuid: str
 
-            browser_profile_uuid = str(uuid.uuid4())
-            profile = BrowserProfile(
-                profile_uuid=browser_profile_uuid,
-                name=f"No Profile ({browser.name})",
-                browser=browser,
-                path=BrowserProfile.get_profile_path(self.paths.profiles_dir, browser_profile_uuid),
-                description=f"Default profile for {browser.name}",
-                is_default_profile=True,
-            )
-            self._all_profiles[profile.profile_uuid] = profile
-            self.config.save_profiles(self._all_profiles)
-            self.profiles_changed.emit()
+        if profile_mode == ProfileMode.DEDICATED:
+            if self._app and self._app.profile_mode == ProfileMode.DEDICATED:
+                profile = self._all_profiles.get(self._app.profile_uuid)
+                if not profile or not profile.is_app_profile:
+                    QMessageBox.warning(
+                        None, "Error", "Dedicated profile for this app was not found."
+                    )
+                    return False
+                updated_profile = profile.model_copy(
+                    update={
+                        "name": f"{name} (dedicated)",
+                        "description": f"Dedicated profile for {name}",
+                    },
+                )
+                self._all_profiles[profile.profile_uuid] = updated_profile
+                self.config.save_profiles(self._all_profiles)
+                profile = updated_profile
+                profile_uuid = updated_profile.profile_uuid
+            else:
+                if not profile_key:
+                    QMessageBox.warning(None, "Error", "Please select a profile source.")
+                    return False
+
+                browser = self.browsers.installed_browsers.get(self._selected_browser_key)
+                if not browser:
+                    QMessageBox.warning(None, "Error", "Please select a browser.")
+                    return False
+
+                template_uuid = None
+                if profile_key != EMPTY_PROFILE_TEMPLATE:
+                    template = self._all_profiles.get(profile_key)
+                    if not template or template.is_app_profile:
+                        QMessageBox.warning(
+                            None, "Error", "Please select a valid template profile."
+                        )
+                        return False
+                    if template.browser.key != browser.key:
+                        QMessageBox.warning(
+                            None,
+                            "Error",
+                            "The selected template profile uses a different browser.",
+                        )
+                        return False
+                    template_uuid = profile_key
+
+                profile = self._create_dedicated_profile(app_uuid, name, browser, template_uuid)
+                self._all_profiles[profile.profile_uuid] = profile
+                self.config.save_profiles(self._all_profiles)
+                self.profiles_changed.emit()
+                profile_uuid = profile.profile_uuid
+        elif profile_mode == ProfileMode.EPHEMERAL:
+            if not profile_key or profile_key == EMPTY_PROFILE_TEMPLATE:
+                QMessageBox.warning(None, "Error", "Please select a session template profile.")
+                return False
+            profile = self._all_profiles.get(profile_key)
+            if not profile or profile.is_app_profile:
+                QMessageBox.warning(
+                    None, "Error", "Please select a valid session template profile."
+                )
+                return False
+            profile_uuid = profile_key
+        else:
+            if not profile_key or profile_key == EMPTY_PROFILE_TEMPLATE:
+                QMessageBox.warning(None, "Error", "Please select a shared profile.")
+                return False
+            profile = self._all_profiles.get(profile_key)
+            if not profile or profile.is_app_profile:
+                QMessageBox.warning(None, "Error", "Please select a valid shared profile.")
+                return False
+            profile_uuid = profile_key
+
+        if profile is None:
+            QMessageBox.warning(None, "Error", "Could not resolve profile.")
+            return False
 
         final_icon_path = None
-        app_uuid = self._app.app_uuid if self._app else str(uuid.uuid4())
 
         if self._selected_icon_path and self._selected_icon_path.exists():
             if self._app and self._app.icon_path and self._app.icon_path.exists():
@@ -486,7 +647,8 @@ class DialogController(QObject):
         web_app_args = {
             "name": name,
             "url": url,
-            "profile_uuid": profile.profile_uuid,
+            "profile_mode": profile_mode,
+            "profile_uuid": profile_uuid,
             "icon_path": final_icon_path,
             "description": self._app_description.strip(),
             "incognito_mode": self._incognito_mode,
@@ -511,17 +673,16 @@ class DialogController(QObject):
             old_profile = self._all_profiles.get(self._app.profile_uuid)
             if (
                 old_profile
-                and old_profile.is_default_profile
-                and old_profile.profile_uuid != profile.profile_uuid
+                and old_profile.is_app_profile
+                and old_profile.app_uuid == self._app.app_uuid
+                and (
+                    profile_mode != ProfileMode.DEDICATED
+                    or old_profile.profile_uuid != profile_uuid
+                )
             ):
-                if old_profile.profile_uuid in self._all_profiles:
-                    if old_profile.path.exists():
-                        shutil.rmtree(old_profile.path)
-
-                    del self._all_profiles[old_profile.profile_uuid]
-
-                    self.config.save_profiles(self._all_profiles)
-                    self.profiles_changed.emit()
+                self._delete_dedicated_profile(old_profile)
+                self.config.save_profiles(self._all_profiles)
+                self.profiles_changed.emit()
 
             updated_app = self._app.model_copy(update=web_app_args)
             apps[updated_app.app_uuid] = updated_app
@@ -568,6 +729,10 @@ class DialogController(QObject):
             "path": profile_path,
             "description": self._profile_description.strip(),
         }
+        if self._profile:
+            profile_data["is_app_profile"] = self._profile.is_app_profile
+            profile_data["app_uuid"] = self._profile.app_uuid
+            profile_data["forked_from_profile_uuid"] = self._profile.forked_from_profile_uuid
 
         new_profile = BrowserProfile(**profile_data)
 
@@ -586,7 +751,7 @@ class DialogController(QObject):
             return
 
         apps = self.config.load_apps()
-        using_apps = [app.name for app in apps.values() if app.profile_uuid == profile_uuid]
+        using_apps = self._apps_using_profile(profile_uuid, apps)
         if using_apps:
             QMessageBox.warning(
                 None,
@@ -757,15 +922,24 @@ class DialogController(QObject):
 
         items = []
         for profile_uuid, profile in self._all_profiles.items():
-            if profile.is_default_profile:
-                continue
+            if profile.is_app_profile:
+                description = f"{profile.browser.name} | Dedicated app profile"
+                if profile.forked_from_profile_uuid:
+                    template = self._all_profiles.get(profile.forked_from_profile_uuid)
+                    if template:
+                        description += f" | Forked from {template.name}"
+                else:
+                    description += " | Started empty"
+            else:
+                description = (
+                    f"{profile.browser.name} | {profile.description or 'Shared template profile'}"
+                )
+
             items.append(
                 {
                     "name": profile.name,
                     "uuid": profile_uuid,
-                    "description": (
-                        f"{profile.browser.name} | {profile.description or 'No description'}"
-                    ),
+                    "description": description,
                 },
             )
         self._profile_list_model.update_items(sorted(items, key=lambda x: x["name"].lower()))
@@ -778,6 +952,83 @@ class DialogController(QObject):
             items.append({"name": browser.name, "uuid": browser.key})
         self._browser_list_model.update_items(items)
 
+    def _populate_profile_mode_list(self):
+        self._profile_mode_list_model.update_items(
+            [
+                {
+                    "name": "Shared profile",
+                    "uuid": ProfileMode.SHARED.value,
+                    "description": "Use an existing profile directly.",
+                },
+                {
+                    "name": "Dedicated profile",
+                    "uuid": ProfileMode.DEDICATED.value,
+                    "description": "Create a private profile for this app only.",
+                },
+                {
+                    "name": "Session template",
+                    "uuid": ProfileMode.EPHEMERAL.value,
+                    "description": "Start from a template copy that is discarded on close.",
+                },
+            ],
+        )
+
+    def _create_dedicated_profile(
+        self,
+        app_uuid: str,
+        app_name: str,
+        browser,
+        template_uuid: Optional[str],
+    ) -> BrowserProfile:
+        profile_uuid = str(uuid.uuid4())
+        profile_path = self.paths.profiles_dir / profile_uuid
+
+        if template_uuid:
+            template = self._all_profiles[template_uuid]
+            copy_profile_tree(template.path, profile_path)
+            forked_from = template_uuid
+        else:
+            create_empty_profile(profile_path)
+            forked_from = None
+
+        return BrowserProfile(
+            profile_uuid=profile_uuid,
+            name=f"{app_name} (dedicated)",
+            browser=browser,
+            path=profile_path,
+            description=f"Dedicated profile for {app_name}",
+            is_app_profile=True,
+            app_uuid=app_uuid,
+            forked_from_profile_uuid=forked_from,
+        )
+
+    def _delete_dedicated_profile(self, profile: BrowserProfile) -> None:
+        if not profile.is_app_profile:
+            return
+
+        if profile.path.exists():
+            shutil.rmtree(profile.path)
+
+        self._all_profiles.pop(profile.profile_uuid, None)
+
+    def _apps_using_profile(
+        self,
+        profile_uuid: str,
+        apps: dict[str, WebApp],
+    ) -> list[str]:
+        using_apps: list[str] = []
+        for app in apps.values():
+            if app.profile_uuid == profile_uuid:
+                using_apps.append(app.name)
+                continue
+
+            if app.profile_mode == ProfileMode.DEDICATED:
+                dedicated = self._all_profiles.get(app.profile_uuid)
+                if dedicated and dedicated.forked_from_profile_uuid == profile_uuid:
+                    using_apps.append(f"{app.name} (dedicated copy)")
+
+        return using_apps
+
     def _filter_profiles(self):
         browser_key = self.selectedBrowserKey
         if not browser_key:
@@ -785,12 +1036,11 @@ class DialogController(QObject):
             return
 
         items = []
-        browser = self.browsers.installed_browsers.get(browser_key)
-        if browser:
-            items.append({"name": "No Profile", "uuid": browser.key})
+        if self._profile_mode == ProfileMode.DEDICATED.value:
+            items.append({"name": "Empty profile", "uuid": EMPTY_PROFILE_TEMPLATE})
 
         for profile_uuid, profile in self._all_profiles.items():
-            if profile.is_default_profile:
+            if profile.is_app_profile:
                 continue
             if profile.browser.key == browser_key:
                 items.append({"name": profile.name, "uuid": profile_uuid})

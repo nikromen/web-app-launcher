@@ -1,8 +1,24 @@
 import uuid
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from web_app_launcher.utils.profile_fork import (
+    cleanup_ephemeral_profile,
+    copy_profile_tree,
+    create_ephemeral_profile,
+)
+
+EMPTY_PROFILE_TEMPLATE = "__empty__"
+
+
+class ProfileMode(str, Enum):
+    SHARED = "shared"
+    DEDICATED = "dedicated"
+    EPHEMERAL = "ephemeral"
 
 
 class WebAppLauncherBaseModel(BaseModel):
@@ -36,9 +52,17 @@ class BrowserProfile(WebAppLauncherBaseModel):
     browser: Browser = Field(..., description="Browser instance")
     path: Path = Field(..., description="Path to profile directory")
     description: str = Field(default="", description="Profile description")
-    is_default_profile: bool = Field(
+    is_app_profile: bool = Field(
         default=False,
-        description="Auto-created per-app profile (hidden from profile manager)",
+        description="Dedicated profile owned by a single application",
+    )
+    app_uuid: Optional[str] = Field(
+        default=None,
+        description="Application that owns this dedicated profile",
+    )
+    forked_from_profile_uuid: Optional[str] = Field(
+        default=None,
+        description="Template profile this dedicated profile was copied from",
     )
     # TODO: add user-agent support? is that needed? user can set it
 
@@ -56,6 +80,10 @@ class WebApp(WebAppLauncherBaseModel):
     )
     name: str = Field(..., min_length=1, description="Application name")
     url: str = Field(..., min_length=1, description="Application URL")
+    profile_mode: ProfileMode = Field(
+        default=ProfileMode.SHARED,
+        description="How this application uses its browser profile",
+    )
     profile_uuid: str = Field(..., min_length=1, description="Profile UUID from profiles.json")
     icon_path: Optional[Path] = Field(
         default=None,
@@ -106,6 +134,12 @@ def normalize_url(url: str) -> str:
     return url
 
 
+@dataclass(frozen=True)
+class LaunchProfileContext:
+    profile: BrowserProfile
+    ephemeral_path: Path | None = None
+
+
 def resolve_app_profile(
     app: WebApp,
     profiles: dict[str, BrowserProfile],
@@ -116,3 +150,23 @@ def resolve_app_profile(
             f"Profile '{app.profile_uuid}' not found for application '{app.name}'",
         )
     return profile
+
+
+def resolve_launch_profile(
+    app: WebApp,
+    profiles: dict[str, BrowserProfile],
+    ephemeral_base_dir: Path,
+) -> LaunchProfileContext:
+    if app.profile_mode in (ProfileMode.SHARED, ProfileMode.DEDICATED):
+        return LaunchProfileContext(profile=resolve_app_profile(app, profiles))
+
+    template = resolve_app_profile(app, profiles)
+    ephemeral_path = create_ephemeral_profile(ephemeral_base_dir, app.app_uuid)
+    try:
+        copy_profile_tree(template.path, ephemeral_path)
+    except Exception:
+        cleanup_ephemeral_profile(ephemeral_path, ephemeral_base_dir)
+        raise
+
+    launch_profile = template.model_copy(update={"path": ephemeral_path})
+    return LaunchProfileContext(profile=launch_profile, ephemeral_path=ephemeral_path)

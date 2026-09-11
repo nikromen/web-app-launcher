@@ -18,7 +18,9 @@ Dialog {
         height: profileManagerDialog.availableHeight
 
         Label {
-            text: "Browser profiles let you pre-configure extensions, settings, and preferences for web applications."
+            text: "Browser profiles store extensions, settings, and logins for web applications.\n\n" +
+                  "Shared profiles are reused directly by apps. Dedicated profiles belong to a single app. " +
+                  "Session templates are copied at launch and reset when the app closes."
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
         }

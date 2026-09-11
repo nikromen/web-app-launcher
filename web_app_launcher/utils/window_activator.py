@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 
 
 def try_activate_pid(pid: int) -> bool:
-    """Best-effort attempt to raise a window belonging to the given PID."""
+    """Best-effort attempt to raise a window on Linux X11 via xdotool."""
     if pid <= 0:
         return False
 

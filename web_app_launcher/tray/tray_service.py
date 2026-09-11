@@ -34,7 +34,7 @@ class TrayService(QObject):
         super().__init__(parent)
         self._paths = paths
         self._config = config
-        self.tray_manager = TrayManager(self)
+        self.tray_manager = TrayManager(paths.ephemeral_profiles_dir, self)
         self.launcher = AppLauncher(paths, browsers, config, self.tray_manager)
         self._server = QLocalServer(self)
         self._is_host = False

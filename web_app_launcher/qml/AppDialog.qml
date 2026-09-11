@@ -156,14 +156,63 @@ Dialog {
                     RowLayout {
                         spacing: 4
                         Layout.minimumWidth: 120
-                        Label { text: "Profile" }
+                        Label { text: "Profile mode" }
                         HelpTip {
-                            tipText: "Choose a shared browser profile, or \"No Profile\" to create a separate profile used only by this app."
+                            tipText: "Shared — use an existing profile directly; cookies and extensions are shared with other apps on the same profile.\n\n" +
+                                     "Dedicated — this app gets its own profile folder. Copy a template or start empty; changes stay with this app only.\n\n" +
+                                     "Session template — each launch starts from a copy of the selected profile. Session data is discarded when the app closes."
+                        }
+                    }
+                    ComboBox {
+                        id: profileModeCombo
+                        Layout.fillWidth: true
+                        model: dialogController.profileModeListModel
+                        textRole: "name"
+                        currentIndex: dialogController.profileModeListModel.get_index_by_value(dialogController.profileMode)
+                        onCurrentIndexChanged: {
+                            let mode = dialogController.profileModeListModel.get_value_by_index(currentIndex)
+                            dialogController.profileMode = mode
+                        }
+                    }
+
+                    Item {
+                        Layout.columnSpan: 2
+                        Layout.fillWidth: true
+                        implicitHeight: profileModeDescriptionLabel.implicitHeight
+
+                        Label {
+                            id: profileModeDescriptionLabel
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            opacity: 0.8
+                            font.pixelSize: 12
+                            text: dialogController.profileModeDescription
+                        }
+                    }
+
+                    RowLayout {
+                        spacing: 4
+                        Layout.minimumWidth: 120
+                        visible: dialogController.profileSourceEnabled
+                        Label {
+                            text: dialogController.profileMode === "dedicated" ? "Template profile" : "Source profile"
+                        }
+                        HelpTip {
+                            tipText: {
+                                if (dialogController.profileMode === "shared") {
+                                    return "Select the profile this app will use directly."
+                                }
+                                if (dialogController.profileMode === "dedicated") {
+                                    return "Optional template to copy when creating this app's profile. Choose \"Empty profile\" to start from scratch."
+                                }
+                                return "Profile copied at launch. Configure extensions and logins in Profile Manager; they apply on the next start."
+                            }
                         }
                     }
                     ComboBox {
                         id: profileCombo
                         Layout.fillWidth: true
+                        visible: dialogController.profileSourceEnabled
                         model: dialogController.filteredProfileModel
                         textRole: "name"
                         currentIndex: dialogController.filteredProfileModel.get_index_by_value(dialogController.selectedProfileUuid)
@@ -173,6 +222,16 @@ Dialog {
                                 dialogController.selectedProfileUuid = uuid
                             }
                         }
+                    }
+
+                    Label {
+                        Layout.columnSpan: 2
+                        Layout.fillWidth: true
+                        visible: !dialogController.profileSourceEnabled && dialogController.dedicatedProfileSummary.length > 0
+                        wrapMode: Text.WordWrap
+                        opacity: 0.8
+                        font.pixelSize: 12
+                        text: dialogController.dedicatedProfileSummary
                     }
                 }
             }

@@ -55,6 +55,12 @@ class PathManager:
         return profiles_dir
 
     @cached_property
+    def ephemeral_profiles_dir(self) -> Path:
+        ephemeral_dir = self.profiles_dir / "ephemeral"
+        ephemeral_dir.mkdir(parents=True, exist_ok=True)
+        return ephemeral_dir
+
+    @cached_property
     def icons_dir(self) -> Path:
         icons_dir = self.data_dir / "icons"
         icons_dir.mkdir(parents=True, exist_ok=True)

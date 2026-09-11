@@ -18,7 +18,14 @@ class FakePathManager:
         self.data_dir = self.base / "data"
         self.icons_dir = self.data_dir / "icons"
         self.profiles_dir = self.data_dir / "browser_profiles"
-        for directory in (self.config_dir, self.data_dir, self.icons_dir, self.profiles_dir):
+        self.ephemeral_profiles_dir = self.profiles_dir / "ephemeral"
+        for directory in (
+            self.config_dir,
+            self.data_dir,
+            self.icons_dir,
+            self.profiles_dir,
+            self.ephemeral_profiles_dir,
+        ):
             directory.mkdir(parents=True, exist_ok=True)
 
     @property

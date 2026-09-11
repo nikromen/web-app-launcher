@@ -4,11 +4,12 @@ import shutil
 import subprocess
 from typing import TYPE_CHECKING
 
-from web_app_launcher.models import resolve_app_profile
+from web_app_launcher.models import resolve_launch_profile
 from web_app_launcher.utils.browser_manager import BrowserManager
 from web_app_launcher.utils.config_manager import ConfigManager
 from web_app_launcher.utils.firefox_chrome import ensure_profile_chrome_for_app
 from web_app_launcher.utils.path_manager import PathManager
+from web_app_launcher.utils.profile_fork import cleanup_ephemeral_profile, watch_process_and_cleanup
 
 if TYPE_CHECKING:
     from web_app_launcher.tray.tray_manager import TrayManager
@@ -48,73 +49,102 @@ class AppLauncher:
             self.tray_manager.show_app(app_uuid)
             pid = self.tray_manager.get_pid(app_uuid)
             return pid if pid is not None else 0
-        profile = resolve_app_profile(app, profiles)
-        logger.info("Found app: %s", app.name)
-        logger.debug(
-            "Full app configuration: %s",
-            json.dumps(app.model_dump(mode="json"), indent=4, default=str),
+        launch_context = resolve_launch_profile(
+            app,
+            profiles,
+            self.path_manager.ephemeral_profiles_dir,
         )
+        ephemeral_path = launch_context.ephemeral_path
+        profile = launch_context.profile
 
-        if not self.browser_manager.installed_browsers:
-            raise RuntimeError("No browsers installed or detected")
-
-        logger.debug(
-            "Installed browsers: %s",
-            list(self.browser_manager.installed_browsers.keys()),
-        )
-
-        logger.info("Using profile: %s -> %s", profile.name, profile.path)
-        logger.debug("Profile exists on disk: %s", profile.path.exists())
-
-        if not profile.path.exists():
-            logger.info("Creating profile directory: %s", profile.path)
-            profile.path.mkdir(parents=True, exist_ok=True)
-
-        ensure_profile_chrome_for_app(
-            profile.path,
-            profile.browser.key,
-            app.show_navigation_bar,
-        )
-
-        browser = profile.browser
-        logger.info("Browser: %s (%s)", browser.name, browser.executable)
-
-        if not shutil.which(browser.executable):
-            raise RuntimeError(
-                f"Browser '{browser.name}' (executable: '{browser.executable}') "
-                f"is not installed or not found in PATH. "
-                f"Please install the browser or update the application configuration.",
+        try:
+            logger.info("Found app: %s", app.name)
+            logger.debug(
+                "Full app configuration: %s",
+                json.dumps(app.model_dump(mode="json"), indent=4, default=str),
             )
 
-        logger.debug(
-            "Browser executable found at: %s",
-            shutil.which(browser.executable),
-        )
+            if not self.browser_manager.installed_browsers:
+                raise RuntimeError("No browsers installed or detected")
 
-        command = self.browser_manager.build_launch_command(
-            profile=profile,
-            url=app.url,
-            incognito=app.incognito_mode,
-            show_navigation_bar=app.show_navigation_bar,
-            extra_args=app.extra_args,
-        )
+            logger.debug(
+                "Installed browsers: %s",
+                list(self.browser_manager.installed_browsers.keys()),
+            )
 
-        logger.debug("Launch command: %s", " ".join(command))
+            logger.info("Using profile: %s -> %s", profile.name, profile.path)
+            logger.debug("Profile exists on disk: %s", profile.path.exists())
 
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+            if not profile.path.exists():
+                logger.info("Creating profile directory: %s", profile.path)
+                profile.path.mkdir(parents=True, exist_ok=True)
 
-        logger.debug("Process started with PID: %s", process.pid)
-        if process.poll() is not None:
-            raise RuntimeError(f"Process exited immediately with code {process.returncode}.")
+            ensure_profile_chrome_for_app(
+                profile.path,
+                profile.browser.key,
+                app.show_navigation_bar,
+            )
 
-        logger.info("Process started successfully with PID: %s", process.pid)
+            browser = profile.browser
+            logger.info("Browser: %s (%s)", browser.name, browser.executable)
 
-        if app.tray_enabled and self.tray_manager:
-            self.tray_manager.register(app, profile, process)
+            if not shutil.which(browser.executable):
+                raise RuntimeError(
+                    f"Browser '{browser.name}' (executable: '{browser.executable}') "
+                    f"is not installed or not found in PATH. "
+                    f"Please install the browser or update the application configuration.",
+                )
 
-        return process.pid
+            logger.debug(
+                "Browser executable found at: %s",
+                shutil.which(browser.executable),
+            )
+
+            command = self.browser_manager.build_launch_command(
+                profile=profile,
+                url=app.url,
+                incognito=app.incognito_mode,
+                show_navigation_bar=app.show_navigation_bar,
+                extra_args=app.extra_args,
+            )
+
+            logger.debug("Launch command: %s", " ".join(command))
+
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+
+            logger.debug("Process started with PID: %s", process.pid)
+            if process.poll() is not None:
+                raise RuntimeError(
+                    f"Process exited immediately with code {process.returncode}.",
+                )
+
+            logger.info("Process started successfully with PID: %s", process.pid)
+
+            if app.tray_enabled and self.tray_manager:
+                self.tray_manager.register(
+                    app,
+                    profile,
+                    process,
+                    ephemeral_path=ephemeral_path,
+                )
+                ephemeral_path = None
+            elif ephemeral_path:
+                watch_process_and_cleanup(
+                    process,
+                    ephemeral_path,
+                    self.path_manager.ephemeral_profiles_dir,
+                )
+                ephemeral_path = None
+
+            return process.pid
+        finally:
+            if ephemeral_path:
+                cleanup_ephemeral_profile(
+                    ephemeral_path,
+                    self.path_manager.ephemeral_profiles_dir,
+                )

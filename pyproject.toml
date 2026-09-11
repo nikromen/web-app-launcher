@@ -1,13 +1,16 @@
 [project]
 name = "web-app-launcher"
 version = "0.1.0"
-description = "A Qt-based web application launcher with browser profiles and system tray support"
+description = "Linux-only Qt web application launcher with browser profiles and system tray support"
 authors = [
     {name = "Jiri Kyjovsky", email = "j1.kyjvosky@gmail.com"},
 ]
 requires-python = ">=3.10"
-keywords = ["Web App Launcher", "Web Apps"]
+keywords = ["Web App Launcher", "Web Apps", "Linux"]
 license = "GPL-3.0-or-later"
+classifiers = [
+    "Operating System :: POSIX :: Linux",
+]
 dependencies = [
     "PySide6>=6.6.0",
     "beautifulsoup4>=4.12.0",

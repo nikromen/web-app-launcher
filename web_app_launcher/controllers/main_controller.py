@@ -8,7 +8,7 @@ from PySide6.QtCore import Property, QAbstractListModel, QObject, Qt, QUrl, Sign
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from web_app_launcher.constants import DEFAULT_ICON_PATH
-from web_app_launcher.models import BrowserProfile, WebApp
+from web_app_launcher.models import BrowserProfile, ProfileMode, WebApp
 
 if TYPE_CHECKING:
     from web_app_launcher.tray.tray_manager import TrayManager
@@ -46,11 +46,22 @@ class AppListModel(QAbstractListModel):
         if role == self.NameRole:
             return app.name
         if role == self.ProfileInfoRole:
-            profile = self._profiles.get(app.profile_uuid)
-            if profile is None:
-                return "Unknown profile"
+            if app.profile_mode == ProfileMode.EPHEMERAL:
+                template = self._profiles.get(app.profile_uuid)
+                if template is None:
+                    return "Unknown session template"
+                info = f"Session template: {template.name} - {template.browser.name}"
+            elif app.profile_mode == ProfileMode.DEDICATED:
+                profile = self._profiles.get(app.profile_uuid)
+                if profile is None:
+                    return "Unknown dedicated profile"
+                info = f"Dedicated: {profile.name} - {profile.browser.name}"
+            else:
+                profile = self._profiles.get(app.profile_uuid)
+                if profile is None:
+                    return "Unknown profile"
+                info = f"Shared: {profile.name} - {profile.browser.name}"
 
-            info = f"{profile.name} - {profile.browser.name}"
             if app.incognito_mode:
                 info += " [Incognito]"
 
@@ -201,7 +212,7 @@ class MainController(QObject):
 
         logger.debug("Removing app: %s (%s)", app.name, app_uuid)
         profile = self.profiles.get(app.profile_uuid)
-        if profile and profile.is_default_profile:
+        if profile and profile.is_app_profile and profile.app_uuid == app_uuid:
             if profile.profile_uuid in self.profiles:
                 if profile.path.exists():
                     shutil.rmtree(profile.path)

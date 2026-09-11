@@ -3,6 +3,7 @@ import os
 import signal
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from web_app_launcher.constants import DEFAULT_ICON_PATH
 from web_app_launcher.models import BrowserProfile, WebApp
+from web_app_launcher.utils.profile_fork import cleanup_ephemeral_profile
 from web_app_launcher.utils.tray_script_runner import run_tray_command
 from web_app_launcher.utils.window_activator import try_activate_pid
 
@@ -22,6 +24,7 @@ class _RunningEntry:
     profile: BrowserProfile
     process: subprocess.Popen
     tray_icon: QSystemTrayIcon
+    ephemeral_path: Path | None = None
 
 
 class TrayManager(QObject):
@@ -29,8 +32,9 @@ class TrayManager(QObject):
 
     running_count_changed = Signal(int)
 
-    def __init__(self, parent=None):
+    def __init__(self, ephemeral_base_dir: Path, parent=None):
         super().__init__(parent)
+        self._ephemeral_base_dir = ephemeral_base_dir
         self._running: dict[str, _RunningEntry] = {}
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(2000)
@@ -54,6 +58,7 @@ class TrayManager(QObject):
         app: WebApp,
         profile: BrowserProfile,
         process: subprocess.Popen,
+        ephemeral_path: Path | None = None,
     ) -> None:
         if not QSystemTrayIcon.isSystemTrayAvailable():
             logger.warning(
@@ -75,6 +80,7 @@ class TrayManager(QObject):
             profile=profile,
             process=process,
             tray_icon=tray_icon,
+            ephemeral_path=ephemeral_path,
         )
         if not self._poll_timer.isActive():
             self._poll_timer.start()
@@ -132,6 +138,9 @@ class TrayManager(QObject):
 
         entry.tray_icon.hide()
         entry.tray_icon.deleteLater()
+
+        if entry.ephemeral_path:
+            cleanup_ephemeral_profile(entry.ephemeral_path, self._ephemeral_base_dir)
 
         if not self._running:
             self._poll_timer.stop()
