@@ -62,6 +62,8 @@ Dialog {
                             icon.name: "download"
                             onClicked: dialogController.fetch_metadata()
                             enabled: urlField.text.length > 0
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Download the page title, description, and icon from the URL."
                         }
                     }
 
@@ -151,7 +153,14 @@ Dialog {
                         }
                     }
 
-                    Label { text: "Profile" }
+                    RowLayout {
+                        spacing: 4
+                        Layout.minimumWidth: 120
+                        Label { text: "Profile" }
+                        HelpTip {
+                            tipText: "Choose a shared browser profile, or \"No Profile\" to create a separate profile used only by this app."
+                        }
+                    }
                     ComboBox {
                         id: profileCombo
                         Layout.fillWidth: true
@@ -199,9 +208,13 @@ Dialog {
                     rowSpacing: 12
                     width: parent.width
 
-                    Label {
-                        text: "Extra Arguments"
+                    RowLayout {
+                        spacing: 4
                         Layout.minimumWidth: 120
+                        Label { text: "Extra Arguments" }
+                        HelpTip {
+                            tipText: "Extra flags appended to the browser launch command. Separate values with spaces, for example: --new-window"
+                        }
                     }
                     TextField {
                         id: extraArgsField
@@ -221,21 +234,17 @@ Dialog {
                     width: parent.width
                     spacing: 12
 
-                    CheckBox {
-                        id: trayEnabledCheck
-                        text: "Enable system tray while this app is running"
-                        checked: dialogController.trayEnabled
-                        onCheckedChanged: dialogController.trayEnabled = checked
-                    }
-
-                    Label {
-                        text: "When enabled, a tray icon appears with Show, Stop, and custom actions. " +
-                              "Show script is optional and useful on Wayland."
-                        wrapMode: Text.WordWrap
-                        Layout.fillWidth: true
-                        opacity: 0.8
-                        font.pixelSize: 11
-                        visible: trayEnabledCheck.checked
+                    RowLayout {
+                        spacing: 4
+                        CheckBox {
+                            id: trayEnabledCheck
+                            text: "Enable system tray while this app is running"
+                            checked: dialogController.trayEnabled
+                            onCheckedChanged: dialogController.trayEnabled = checked
+                        }
+                        HelpTip {
+                            tipText: "Shows a tray icon while the app is running. Right-click for Show, Stop, and any custom actions you add below."
+                        }
                     }
 
                     GridLayout {
@@ -246,10 +255,14 @@ Dialog {
                         rowSpacing: 8
                         Layout.fillWidth: true
 
-                        Label {
-                            text: "Show script"
+                        RowLayout {
+                            spacing: 4
                             Layout.alignment: Qt.AlignVCenter
                             Layout.minimumWidth: 120
+                            Label { text: "Show script" }
+                            HelpTip {
+                                tipText: "Optional script run first when you choose Show from the tray. Built-in window focus is used only if no show script is set or it fails. Often needed on Wayland. Receives WEBAPP_ACTION=show and WEBAPP_UUID, WEBAPP_NAME, WEBAPP_URL, WEBAPP_PID, and WEBAPP_PROFILE_PATH."
+                            }
                         }
                         RowLayout {
                             Layout.fillWidth: true
@@ -276,10 +289,17 @@ Dialog {
                         Layout.fillWidth: true
                         visible: trayEnabledCheck.checked
                         enabled: trayEnabledCheck.checked
-                        Label {
-                            text: "Custom actions"
+                        RowLayout {
                             Layout.fillWidth: true
-                            font.weight: Font.DemiBold
+                            spacing: 4
+                            Label {
+                                text: "Custom actions"
+                                Layout.fillWidth: true
+                                font.weight: Font.DemiBold
+                            }
+                            HelpTip {
+                                tipText: "Executable scripts or .sh files added to the tray menu. They run with WEBAPP_ACTION=script and the same WEBAPP_* environment variables as the show script."
+                            }
                         }
                         Button {
                             text: "Add Script"

@@ -79,6 +79,8 @@ Dialog {
                             text: "Configure"
                             icon.name: "system-run"
                             onClicked: dialogController.configure_profile(uuid)
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Open this browser profile so you can install extensions, sign in, and change settings."
                         }
                         Button {
                             text: "Edit"

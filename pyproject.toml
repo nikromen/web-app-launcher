@@ -63,4 +63,5 @@ files = [
     "web_app_launcher/qml/IconPickerDialog.qml",
     "web_app_launcher/qml/ShortcutsDialog.qml",
     "web_app_launcher/qml/AboutDialog.qml",
+    "web_app_launcher/qml/HelpTip.qml",
 ]
