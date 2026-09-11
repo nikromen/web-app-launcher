@@ -62,6 +62,13 @@ This is a development build from the main branch.
 %pyproject_install
 %pyproject_save_files %{srcname}
 
+install -Dpm644 data/com.nikromen.WebAppLauncher.desktop \
+    %{buildroot}%{_datadir}/applications/com.nikromen.WebAppLauncher.desktop
+install -Dpm644 data/com.nikromen.WebAppLauncher.metainfo.xml \
+    %{buildroot}%{_datadir}/metainfo/com.nikromen.WebAppLauncher.metainfo.xml
+install -Dpm644 data/icons/hicolor/scalable/apps/com.nikromen.WebAppLauncher.svg \
+    %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/com.nikromen.WebAppLauncher.svg
+
 
 %check
 export QT_QPA_PLATFORM=offscreen
@@ -72,6 +79,9 @@ export QT_QPA_PLATFORM=offscreen
 %license LICENSE
 %doc README.md
 %{_bindir}/web-app-launcher
+%{_datadir}/applications/com.nikromen.WebAppLauncher.desktop
+%{_datadir}/metainfo/com.nikromen.WebAppLauncher.metainfo.xml
+%{_datadir}/icons/hicolor/scalable/apps/com.nikromen.WebAppLauncher.svg
 
 
 %changelog

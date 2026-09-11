@@ -1,7 +1,7 @@
 [project]
 name = "web-app-launcher"
 version = "0.1.0"
-description = "Linux-only Qt web application launcher with browser profiles and system tray support"
+description = "A Qt-based web application launcher with browser profiles and system tray support"
 authors = [
     {name = "Jiri Kyjovsky", email = "j1.kyjvosky@gmail.com"},
 ]
@@ -43,6 +43,12 @@ packages = ["web_app_launcher"]
 
 [tool.hatchling.build.targets.wheel.force-include]
 "web_app_launcher/resources" = "web_app_launcher/resources"
+
+[tool.hatchling.build.targets.sdist]
+include = [
+    "data/**",
+    "files/**",
+]
 
 [tool.mypy]
 python_version = "3.10"

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Web App Launcher
+GenericName=Web App Manager
+Comment=Launch web applications as standalone desktop apps
+Exec=web-app-launcher gui
+TryExec=web-app-launcher
+Icon=com.nikromen.WebAppLauncher
+Terminal=false
+Categories=Network;Utility;
+Keywords=web;app;launcher;browser;profile;pwa;
+StartupNotify=true
+StartupWMClass=com.nikromen.WebAppLauncher

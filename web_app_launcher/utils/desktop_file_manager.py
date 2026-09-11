@@ -38,9 +38,12 @@ Type=Application
 Name={name}
 Comment={description}
 Exec={self._build_exec_line(app.app_uuid)}
+TryExec=web-app-launcher
 {icon_line}Terminal=false
-Categories=Network;WebBrowser;WebApps;
+Categories=Network;WebBrowser;
+Keywords=web;app;launcher;
 StartupNotify=true
+StartupWMClass={APP_NAME}
 """
 
         desktop_file = self.get_desktop_file_path(app.app_uuid)

@@ -10,7 +10,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtWidgets import QApplication
 
-from web_app_launcher.constants import APP_NAME
+from web_app_launcher.constants import APP_ID, APP_NAME
 from web_app_launcher.controllers.dialog_controller import DialogController
 from web_app_launcher.controllers.main_controller import MainController
 from web_app_launcher.tray.tray_service import LaunchRouter, TrayService, try_remote_launch
@@ -122,6 +122,7 @@ def gui(ctx: click.Context):
     app.setOrganizationName("nikromen")
     app.setOrganizationDomain("nikromen.com")
     app.setApplicationVersion(_app_version())
+    app.setDesktopFileName(f"{APP_ID}.desktop")
 
     engine = QQmlApplicationEngine()
 

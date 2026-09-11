@@ -39,6 +39,7 @@ MANIFEST
 # PyInstaller
 *.manifest
 *.spec
+!files/*.spec
 
 # Installer logs
 pip-log.txt

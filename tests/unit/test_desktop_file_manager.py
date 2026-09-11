@@ -20,6 +20,8 @@ def test_create_desktop_file_writes_expected_content(tmp_path, sample_app, monke
     assert f"Name={sample_app.name}" in content
     assert f'run-app "{sample_app.app_uuid}"' in content
     assert f"{sys.executable} -m web_app_launcher.main" in content
+    assert "TryExec=web-app-launcher" in content
+    assert f"StartupWMClass={APP_NAME}" in content
     assert desktop_file.name == f"{APP_NAME}-{sample_app.app_uuid}.desktop"
 
 
