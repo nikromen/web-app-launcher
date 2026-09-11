@@ -25,6 +25,8 @@ def test_build_launch_command_for_firefox(sample_profile: BrowserProfile):
 
     assert command[0] == "firefox"
     assert "--profile" in command
+    assert "--new-instance" in command
+    assert "--new-window" in command
     assert "https://example.com" in command
 
 

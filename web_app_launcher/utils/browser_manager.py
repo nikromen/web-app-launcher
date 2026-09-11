@@ -27,7 +27,7 @@ class BrowserManager:
             name="Firefox",
             executable="firefox",
             command_template=(
-                "{executable} --profile {profile_path} --no-remote -foreground {incognito} {url}"
+                "{executable} --profile {profile_path} --new-instance {incognito} {url}"
             ),
         ),
         "zen": Browser(
@@ -35,7 +35,7 @@ class BrowserManager:
             name="Zen Browser",
             executable="zen-browser",
             command_template=(
-                "{executable} --profile {profile_path} --no-remote -foreground {incognito} {url}"
+                "{executable} --profile {profile_path} --new-instance {incognito} {url}"
             ),
         ),
         "google-chrome": Browser(
@@ -112,10 +112,18 @@ class BrowserManager:
         }
         logger.debug("Base parameters for building command: %s", params)
 
-        if incognito:
-            if is_firefox_based(browser.key):
-                params["incognito"] = "--private-window"
-            elif is_chromium_based(browser.key):
+        if is_firefox_based(browser.key):
+            params["app_mode"] = ""
+            params["incognito"] = "--private-window" if incognito else ""
+            if url:
+                if incognito:
+                    params["url"] = shlex.quote(url)
+                else:
+                    params["url"] = f"--new-window {shlex.quote(url)}"
+            else:
+                params["url"] = ""
+        elif incognito:
+            if is_chromium_based(browser.key):
                 params["incognito"] = "--incognito"
             else:
                 logger.warning(
@@ -123,17 +131,20 @@ class BrowserManager:
                     browser.key,
                 )
                 params["incognito"] = ""
+            params["app_mode"] = ""
+            params["url"] = shlex.quote(url) if url else ""
         else:
             params["incognito"] = ""
-
-        if is_chromium_based(browser.key):
-            if not show_navigation_bar and url:
-                params["app_mode"] = f"--app={shlex.quote(url)}"
-                params["url"] = ""
+            if is_chromium_based(browser.key):
+                if not show_navigation_bar and url:
+                    params["app_mode"] = f"--app={shlex.quote(url)}"
+                    params["url"] = ""
+                else:
+                    params["app_mode"] = ""
+                    params["url"] = shlex.quote(url) if url else ""
             else:
                 params["app_mode"] = ""
-        else:
-            params["app_mode"] = ""
+                params["url"] = shlex.quote(url) if url else ""
 
         logger.debug("Final parameters after adjustments: %s", params)
 
