@@ -1,8 +1,12 @@
+import errno
 import json
 import logging
+import os
+import socket as local_socket
+import stat
 from pathlib import Path
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QCoreApplication, QLockFile, QObject
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 from web_app_launcher.launcher import AppLauncher
@@ -17,8 +21,6 @@ from web_app_launcher.utils.config_manager import ConfigManager
 from web_app_launcher.utils.path_manager import PathManager
 
 logger = logging.getLogger(__name__)
-
-SERVER_NAME = "web-app-launcher-tray"
 
 
 class TrayService(QObject):
@@ -37,21 +39,84 @@ class TrayService(QObject):
         self.tray_manager = TrayManager(paths.ephemeral_profiles_dir, self)
         self.launcher = AppLauncher(paths, browsers, config, self.tray_manager)
         self._server = QLocalServer(self)
+        self._server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         self._is_host = False
         self._server.newConnection.connect(self._on_connection)
+        self._socket_path = paths.tray_socket_file
+        self._lock = QLockFile(str(paths.tray_lock_file))
+        self._lock.setStaleLockTime(0)
 
-        if self._server.listen(SERVER_NAME):
-            self._is_host = True
-        else:
-            self._server.removeServer(SERVER_NAME)
-            self._is_host = self._server.listen(SERVER_NAME)
+        # QLocalServer closes its socket before emitting destroyed. Release the
+        # non-QObject lock afterwards, including when the service is deleted.
+        lock = self._lock
+        self._server.destroyed.connect(lambda _object=None: lock.unlock())
+        if not self._lock.tryLock(0):
+            return
 
-        if self._is_host:
+        try:
+            if not self._prepare_socket():
+                return
+            if not self._server.listen(str(self._socket_path)):
+                logger.error("Could not listen on tray socket: %s", self._server.errorString())
+                return
+
+            application = QCoreApplication.instance()
+            if application is not None:
+                application.aboutToQuit.connect(self.close)
+
             create_session_token(self._paths.config_dir)
+            self._is_host = True
+        finally:
+            if not self._is_host:
+                self.close()
 
     @property
     def is_host(self) -> bool:
         return self._is_host
+
+    def close(self) -> None:
+        """Release our socket before allowing another process to become host."""
+        self._server.close()
+        self._is_host = False
+        self._lock.unlock()
+
+    def _prepare_socket(self) -> bool:
+        """Remove only an unchanged, refused socket while holding the host lock."""
+        try:
+            info = self._socket_path.lstat()
+        except FileNotFoundError:
+            return True
+
+        if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.geteuid():
+            logger.warning("Refusing to replace unsafe tray socket: %s", self._socket_path)
+            return False
+
+        # Qt's ConnectionRefusedError can also mean a timeout. Only the native
+        # ECONNREFUSED result is sufficient evidence of an abandoned socket.
+        try:
+            with local_socket.socket(local_socket.AF_UNIX, local_socket.SOCK_STREAM) as probe:
+                probe.settimeout(0.2)
+                probe.connect(str(self._socket_path))
+        except OSError as exc:
+            if exc.errno != errno.ECONNREFUSED:
+                logger.warning("Could not verify stale tray socket: %s", exc)
+                return False
+        else:
+            return False
+
+        try:
+            current = self._socket_path.lstat()
+        except FileNotFoundError:
+            return True
+
+        if (
+            not stat.S_ISSOCK(current.st_mode)
+            or current.st_uid != os.geteuid()
+            or (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino)
+        ):
+            return False
+
+        return bool(QLocalServer.removeServer(str(self._socket_path)))
 
     def _on_connection(self) -> None:
         socket = self._server.nextPendingConnection()
@@ -110,7 +175,7 @@ def send_tray_command(
         return False
 
     socket = QLocalSocket()
-    socket.connectToServer(SERVER_NAME)
+    socket.connectToServer(str(PathManager().tray_socket_file))
     if not socket.waitForConnected(timeout_ms):
         return False
 

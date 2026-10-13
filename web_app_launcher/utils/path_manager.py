@@ -1,3 +1,5 @@
+import os
+import stat
 from functools import cached_property
 from pathlib import Path
 
@@ -8,6 +10,29 @@ from web_app_launcher.constants import APP_NAME
 
 class PathManager:
     """Manages application paths for configuration, data, and icons"""
+
+    @cached_property
+    def runtime_dir(self) -> Path:
+        location = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.RuntimeLocation)
+        if not location:
+            raise RuntimeError("No user runtime directory is available")
+
+        runtime_dir = Path(location) / APP_NAME
+        runtime_dir.mkdir(mode=0o700, exist_ok=True)
+        info = runtime_dir.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+            raise PermissionError(f"Unsafe application runtime directory: {runtime_dir}")
+
+        runtime_dir.chmod(0o700)
+        return runtime_dir
+
+    @cached_property
+    def tray_socket_file(self) -> Path:
+        return self.runtime_dir / "tray.sock"
+
+    @cached_property
+    def tray_lock_file(self) -> Path:
+        return self.runtime_dir / "tray.lock"
 
     @cached_property
     def config_dir(self) -> Path:
