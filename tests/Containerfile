@@ -1,9 +1,12 @@
-FROM fedora:latest
+FROM registry.fedoraproject.org/fedora:44
 
 RUN dnf install -y \
     dbus-libs \
     fontconfig \
     git \
+    just \
+    libatomic \
+    python3 \
     qt6-qtsvg \
     libX11-xcb \
     libxcb \
@@ -15,5 +18,5 @@ RUN dnf install -y \
     uv \
     && dnf clean all
 
-ENV QT_QPA_PLATFORM=offscreen
-WORKDIR /app
+WORKDIR /workspace
+CMD ["/bin/bash"]
