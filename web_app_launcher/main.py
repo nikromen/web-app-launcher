@@ -13,7 +13,12 @@ from PySide6.QtWidgets import QApplication
 from web_app_launcher.constants import APP_ID, APP_NAME
 from web_app_launcher.controllers.dialog_controller import DialogController
 from web_app_launcher.controllers.main_controller import MainController
-from web_app_launcher.tray.tray_service import LaunchRouter, TrayService, try_remote_launch
+from web_app_launcher.tray.tray_service import (
+    LaunchRouter,
+    TrayCommandError,
+    TrayService,
+    try_remote_launch,
+)
 from web_app_launcher.utils.browser_manager import BrowserManager
 from web_app_launcher.utils.config_manager import ConfigManager
 from web_app_launcher.utils.metadata_fetcher import MetadataFetcher
@@ -85,18 +90,21 @@ def entry_point(ctx: click.Context, log_level: str):
 @click.pass_context
 def run_app(ctx: click.Context, app_uuid: str):
     """Launch application by UUID (used by .desktop files)"""
-    if try_remote_launch(app_uuid, ctx.obj.paths.config_dir):
-        return 0
-
-    app = _ensure_qt_app()
-
-    tray_service = TrayService(ctx.obj.paths, ctx.obj.browsers, ctx.obj.config)
-    if not tray_service.is_host:
+    try:
         if try_remote_launch(app_uuid, ctx.obj.paths.config_dir):
             return 0
 
-        logger.error("Could not start or connect to tray service")
-        return 1
+        app = _ensure_qt_app()
+
+        tray_service = TrayService(ctx.obj.paths, ctx.obj.browsers, ctx.obj.config)
+        if not tray_service.is_server:
+            if try_remote_launch(app_uuid, ctx.obj.paths.config_dir):
+                return 0
+
+            logger.error("Could not start or connect to tray service")
+            return 1
+    except TrayCommandError as exc:
+        raise click.ClickException(str(exc)) from exc
 
     try:
         tray_service.launcher.launch_app(app_uuid)
@@ -133,7 +141,7 @@ def gui(ctx: click.Context):
     tray_service = TrayService(paths, browsers, config)
     metadata_fetcher = MetadataFetcher(paths.icons_dir)
 
-    tray_manager = tray_service.tray_manager if tray_service.is_host else None
+    tray_manager = tray_service.tray_manager if tray_service.is_server else None
     main_controller = MainController(
         config,
         LaunchRouter(tray_service),
@@ -159,7 +167,7 @@ def gui(ctx: click.Context):
     if not engine.rootObjects():
         return -1
 
-    if tray_service.is_host:
+    if tray_service.is_server:
         app.setQuitOnLastWindowClosed(False)
         tray_service.tray_manager.running_count_changed.connect(main_controller.maybe_quit)
 
