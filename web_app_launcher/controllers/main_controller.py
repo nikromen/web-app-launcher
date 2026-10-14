@@ -146,12 +146,15 @@ class MainController(QObject):
     @Slot()
     def quit_application(self):
         if self._tray_manager is not None:
-            self._tray_manager.stop_all()
+            try:
+                self._tray_manager.stop_all()
+            except RuntimeError as exc:
+                logger.error("Could not quit while stopping applications: %s", exc)
+                self.showWarningMessage.emit("Could not stop applications", str(exc))
+                return
 
         self._window_visible = False
-        app = QApplication.instance()
-        if app is not None:
-            app.quit()
+        self.maybe_quit()
 
     @Slot()
     def check_browsers_on_startup(self):

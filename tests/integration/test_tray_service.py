@@ -589,16 +589,22 @@ def test_success_is_confirmed_for_existing_handlers(
         ipc_host.launcher.launch_app.assert_not_called()
 
 
-def test_launch_exception_returns_failure_without_details(ipc_host, ipc_client, tray_paths, qt_app):
+@pytest.mark.parametrize("command", ["launch", "stop"])
+def test_command_exception_returns_failure_without_details(
+    command, ipc_host, ipc_client, tray_paths, qt_app
+):
     token = read_session_token(tray_paths.config_dir)
-    ipc_host.launcher.launch_app.side_effect = RuntimeError(f"private exception {token}")
+    handler = (
+        ipc_host.launcher.launch_app if command == "launch" else ipc_host.tray_manager.stop_app
+    )
+    handler.side_effect = RuntimeError(f"private exception {token}")
     client = ipc_client()
-    client.write(_request(tray_paths))
+    client.write(_request(tray_paths, cmd=command))
     client.flush()
     response = _response(client, qt_app)
     assert response == {"ok": False, "error": "Command failed"}
     assert token not in json.dumps(response)
-    ipc_host.launcher.launch_app.assert_called_once()
+    handler.assert_called_once()
 
 
 def test_one_connection_executes_only_one_command(ipc_host, ipc_client, tray_paths, qt_app):

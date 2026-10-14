@@ -141,7 +141,7 @@ class AppLauncher:
                 ephemeral_path = None
 
             if app.tray_enabled and self.tray_manager:
-                self.tray_manager.register(app, profile, process)
+                self.tray_manager.register(app, profile, process, pgid)
 
             return process.pid
         finally:

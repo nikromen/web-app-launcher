@@ -20,14 +20,17 @@ def test_launch_app_raises_for_missing_app(path_manager):
 
 
 @pytest.mark.parametrize("profile_mode", [ProfileMode.SHARED, ProfileMode.DEDICATED])
+@pytest.mark.parametrize("tray_enabled", [True, False])
 def test_launch_app_starts_process(
     profile_mode,
+    tray_enabled,
     path_manager,
     sample_app,
     sample_profile,
     monkeypatch,
 ):
     sample_app.profile_mode = profile_mode
+    sample_app.tray_enabled = tray_enabled
     config = ConfigManager(path_manager)
     config.save_profiles({sample_profile.profile_uuid: sample_profile})
     config.save_apps({sample_app.app_uuid: sample_app})
@@ -48,17 +51,25 @@ def test_launch_app_starts_process(
     process.poll.return_value = None
     popen = MagicMock(return_value=process)
     monkeypatch.setattr("web_app_launcher.launcher.subprocess.Popen", popen)
+    tray = MagicMock()
+    tray.is_running.return_value = False
 
     launcher = AppLauncher(
         path_manager=path_manager,
         browser_manager=browser_manager,
         config_manager=config,
+        tray_manager=tray,
     )
 
     pid = launcher.launch_app(sample_app.app_uuid)
 
     assert pid == 4242
     popen.assert_called_once()
+    assert popen.call_args.kwargs["start_new_session"] is True
+    if tray_enabled:
+        tray.register.assert_called_once_with(sample_app, sample_profile, process, 4242)
+    else:
+        tray.register.assert_not_called()
     command = popen.call_args.args[0]
     assert "firefox" in command
     assert "https://example.com" in command
