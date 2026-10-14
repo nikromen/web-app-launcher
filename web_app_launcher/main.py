@@ -90,6 +90,7 @@ def entry_point(ctx: click.Context, log_level: str):
 @click.pass_context
 def run_app(ctx: click.Context, app_uuid: str):
     """Launch application by UUID (used by .desktop files)"""
+    tray_service: TrayService | None = None
     try:
         if try_remote_launch(app_uuid, ctx.obj.paths.config_dir):
             return 0
@@ -103,23 +104,26 @@ def run_app(ctx: click.Context, app_uuid: str):
 
             logger.error("Could not start or connect to tray service")
             return 1
+
+        try:
+            tray_service.launcher.launch_app(app_uuid)
+        except Exception as exc:
+            logger.error("Failed to launch app %s: %s", app_uuid, exc)
+            return 1
+
+        if not tray_service.tray_manager.has_running_apps():
+            return 0
+
+        app.setQuitOnLastWindowClosed(False)
+        tray_service.tray_manager.running_count_changed.connect(
+            lambda _count: app.quit() if _count == 0 else None,
+        )
+        return app.exec()
     except TrayCommandError as exc:
         raise click.ClickException(str(exc)) from exc
-
-    try:
-        tray_service.launcher.launch_app(app_uuid)
-    except Exception as exc:
-        logger.error("Failed to launch app %s: %s", app_uuid, exc)
-        return 1
-
-    if not tray_service.tray_manager.has_running_apps():
-        return 0
-
-    app.setQuitOnLastWindowClosed(False)
-    tray_service.tray_manager.running_count_changed.connect(
-        lambda _count: app.quit() if _count == 0 else None,
-    )
-    return app.exec()
+    finally:
+        if tray_service is not None:
+            tray_service.close()
 
 
 @entry_point.command("gui")

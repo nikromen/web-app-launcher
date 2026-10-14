@@ -78,13 +78,25 @@ def cleanup_ephemeral_profile(path: Path, ephemeral_base_dir: Path) -> None:
         pass
 
 
-def watch_process_and_cleanup(
+def _wait_and_cleanup(
     process: subprocess.Popen,
     ephemeral_path: Path,
     ephemeral_base_dir: Path,
 ) -> None:
-    def _wait_and_cleanup() -> None:
-        process.wait()
-        cleanup_ephemeral_profile(ephemeral_path, ephemeral_base_dir)
+    process.wait()
+    cleanup_ephemeral_profile(ephemeral_path, ephemeral_base_dir)
 
-    threading.Thread(target=_wait_and_cleanup, daemon=True).start()
+
+def watch_process_and_cleanup(
+    process: subprocess.Popen,
+    ephemeral_path: Path,
+    ephemeral_base_dir: Path,
+) -> threading.Thread:
+    """Take ownership of cleanup only after starting the non-daemon watcher."""
+    watcher = threading.Thread(
+        target=_wait_and_cleanup,
+        args=(process, ephemeral_path, ephemeral_base_dir),
+        daemon=False,
+    )
+    watcher.start()
+    return watcher

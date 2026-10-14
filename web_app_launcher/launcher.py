@@ -56,6 +56,7 @@ class AppLauncher:
         )
         ephemeral_path = launch_context.ephemeral_path
         profile = launch_context.profile
+        process: subprocess.Popen | None = None
 
         try:
             logger.info("Found app: %s", app.name)
@@ -125,15 +126,7 @@ class AppLauncher:
 
             logger.info("Process started successfully with PID: %s", process.pid)
 
-            if app.tray_enabled and self.tray_manager:
-                self.tray_manager.register(
-                    app,
-                    profile,
-                    process,
-                    ephemeral_path=ephemeral_path,
-                )
-                ephemeral_path = None
-            elif ephemeral_path:
+            if ephemeral_path:
                 watch_process_and_cleanup(
                     process,
                     ephemeral_path,
@@ -141,9 +134,13 @@ class AppLauncher:
                 )
                 ephemeral_path = None
 
+            if app.tray_enabled and self.tray_manager:
+                self.tray_manager.register(app, profile, process)
+
             return process.pid
         finally:
-            if ephemeral_path:
+            # A failed watcher start must not delete a live browser's profile.
+            if ephemeral_path and (process is None or process.poll() is not None):
                 cleanup_ephemeral_profile(
                     ephemeral_path,
                     self.path_manager.ephemeral_profiles_dir,

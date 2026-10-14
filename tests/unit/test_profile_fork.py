@@ -1,4 +1,3 @@
-import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -89,7 +88,8 @@ def test_watch_process_and_cleanup_removes_ephemeral_profile(tmp_path):
     process = MagicMock()
     process.wait.return_value = None
 
-    watch_process_and_cleanup(process, path, ephemeral_base)
+    watcher = watch_process_and_cleanup(process, path, ephemeral_base)
+    watcher.join(timeout=1)
+    assert not watcher.is_alive()
     process.wait.assert_called_once()
-    time.sleep(0.05)
     assert not path.exists()
