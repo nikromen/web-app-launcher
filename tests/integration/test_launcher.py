@@ -98,12 +98,14 @@ def test_failed_ephemeral_launch_cleans_session_and_preserves_template(
         popen.assert_not_called()
 
 
-@pytest.mark.parametrize("still_running", [True, False])
+@pytest.mark.parametrize("still_running", [True, False, None])
 def test_failed_watcher_start_keeps_live_profile_and_cleans_finished_profile(
     still_running, ephemeral_launcher, sample_app, path_manager, monkeypatch
 ):
     process = MagicMock()
-    process.poll.side_effect = [None, None if still_running else 0]
+    process.pid = 4242
+    group_running = MagicMock(side_effect=[True, still_running])
+    monkeypatch.setattr("web_app_launcher.launcher.process_group_is_running", group_running)
     monkeypatch.setattr(
         "web_app_launcher.launcher.subprocess.Popen", MagicMock(return_value=process)
     )
@@ -113,4 +115,7 @@ def test_failed_watcher_start_keeps_live_profile_and_cleans_finished_profile(
     )
     with pytest.raises(RuntimeError, match="could not start watcher"):
         ephemeral_launcher.launch_app(sample_app.app_uuid)
-    assert bool(list(path_manager.ephemeral_profiles_dir.rglob("prefs.js"))) is still_running
+    assert bool(list(path_manager.ephemeral_profiles_dir.rglob("prefs.js"))) is (
+        still_running is not False
+    )
+    group_running.assert_called_with(process, 4242)

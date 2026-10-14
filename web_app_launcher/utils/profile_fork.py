@@ -2,8 +2,11 @@ import logging
 import shutil
 import subprocess
 import threading
+import time
 import uuid
 from pathlib import Path
+
+from web_app_launcher.utils.process_group import process_group_is_running
 
 logger = logging.getLogger(__name__)
 
@@ -80,22 +83,38 @@ def cleanup_ephemeral_profile(path: Path, ephemeral_base_dir: Path) -> None:
 
 def _wait_and_cleanup(
     process: subprocess.Popen,
+    pgid: int,
     ephemeral_path: Path,
     ephemeral_base_dir: Path,
 ) -> None:
-    process.wait()
-    cleanup_ephemeral_profile(ephemeral_path, ephemeral_base_dir)
+    try:
+        process.wait()
+    except OSError:
+        logger.exception("Cannot wait for process group %s; preserving profile", pgid)
+        return
+
+    while True:
+        running = process_group_is_running(process, pgid)
+        if running is None:
+            return
+
+        if not running:
+            cleanup_ephemeral_profile(ephemeral_path, ephemeral_base_dir)
+            return
+
+        time.sleep(0.1)
 
 
 def watch_process_and_cleanup(
     process: subprocess.Popen,
+    pgid: int,
     ephemeral_path: Path,
     ephemeral_base_dir: Path,
 ) -> threading.Thread:
     """Take ownership of cleanup only after starting the non-daemon watcher."""
     watcher = threading.Thread(
         target=_wait_and_cleanup,
-        args=(process, ephemeral_path, ephemeral_base_dir),
+        args=(process, pgid, ephemeral_path, ephemeral_base_dir),
         daemon=False,
     )
     watcher.start()

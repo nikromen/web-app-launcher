@@ -9,6 +9,7 @@ from web_app_launcher.utils.browser_manager import BrowserManager
 from web_app_launcher.utils.config_manager import ConfigManager
 from web_app_launcher.utils.firefox_chrome import ensure_profile_chrome_for_app
 from web_app_launcher.utils.path_manager import PathManager
+from web_app_launcher.utils.process_group import process_group_is_running
 from web_app_launcher.utils.profile_fork import cleanup_ephemeral_profile, watch_process_and_cleanup
 
 if TYPE_CHECKING:
@@ -57,6 +58,7 @@ class AppLauncher:
         ephemeral_path = launch_context.ephemeral_path
         profile = launch_context.profile
         process: subprocess.Popen | None = None
+        pgid: int | None = None
 
         try:
             logger.info("Found app: %s", app.name)
@@ -117,9 +119,12 @@ class AppLauncher:
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
+            # start_new_session makes the child's PID both its SID and PGID,
+            # even when the wrapper exits before we can inspect it.
+            pgid = process.pid
 
             logger.debug("Process started with PID: %s", process.pid)
-            if process.poll() is not None:
+            if process_group_is_running(process, pgid) is False:
                 raise RuntimeError(
                     f"Process exited immediately with code {process.returncode}.",
                 )
@@ -129,6 +134,7 @@ class AppLauncher:
             if ephemeral_path:
                 watch_process_and_cleanup(
                     process,
+                    pgid,
                     ephemeral_path,
                     self.path_manager.ephemeral_profiles_dir,
                 )
@@ -139,8 +145,11 @@ class AppLauncher:
 
             return process.pid
         finally:
-            # A failed watcher start must not delete a live browser's profile.
-            if ephemeral_path and (process is None or process.poll() is not None):
+            # A failed watcher start must not delete a live descendant's profile.
+            if ephemeral_path and (
+                process is None
+                or (pgid is not None and process_group_is_running(process, pgid) is False)
+            ):
                 cleanup_ephemeral_profile(
                     ephemeral_path,
                     self.path_manager.ephemeral_profiles_dir,

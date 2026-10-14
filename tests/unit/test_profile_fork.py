@@ -81,15 +81,33 @@ def test_validate_ephemeral_session_path_accepts_expected_shape(tmp_path):
     assert validate_ephemeral_session_path(path, ephemeral_base) == path.resolve()
 
 
-def test_watch_process_and_cleanup_removes_ephemeral_profile(tmp_path):
+def test_watch_process_and_cleanup_removes_ephemeral_profile(tmp_path, monkeypatch):
     ephemeral_base = tmp_path / "ephemeral"
     path = create_ephemeral_profile(ephemeral_base, "app-123")
 
     process = MagicMock()
     process.wait.return_value = None
+    group_running = MagicMock(side_effect=[True, False])
+    monkeypatch.setattr(
+        "web_app_launcher.utils.profile_fork.process_group_is_running", group_running
+    )
 
-    watcher = watch_process_and_cleanup(process, path, ephemeral_base)
+    watcher = watch_process_and_cleanup(process, 4242, path, ephemeral_base)
     watcher.join(timeout=1)
     assert not watcher.is_alive()
     process.wait.assert_called_once()
+    assert group_running.call_count == 2
     assert not path.exists()
+
+
+def test_watcher_preserves_profile_and_stops_on_unknown_group_state(tmp_path, monkeypatch):
+    path = create_ephemeral_profile(tmp_path, "app")
+    group_running = MagicMock(return_value=None)
+    monkeypatch.setattr(
+        "web_app_launcher.utils.profile_fork.process_group_is_running", group_running
+    )
+    watcher = watch_process_and_cleanup(MagicMock(), 4242, path, tmp_path)
+    watcher.join(timeout=1)
+    assert not watcher.is_alive()
+    group_running.assert_called_once()
+    assert path.is_dir()
