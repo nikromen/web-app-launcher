@@ -1,10 +1,18 @@
 import ipaddress
 import socket
+from typing import BinaryIO
 from urllib.parse import urljoin, urlparse
 
 import requests
 
 _REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+
+
+class _NoRedirectSession(requests.Session):
+    def get_redirect_target(self, resp: requests.Response) -> None:
+        # Requests otherwise consumes redirect bodies while preparing Response.next,
+        # even with allow_redirects=False and stream=True. We handle redirects below.
+        return None
 
 
 def validate_public_http_url(url: str) -> None:
@@ -34,30 +42,51 @@ def fetch_public_http_response(
     url: str,
     *,
     headers: dict[str, str],
+    destination: BinaryIO,
+    max_bytes: int,
     timeout: int = 10,
     max_redirects: int = 10,
-) -> tuple[requests.Response, str]:
-    """Fetch a public HTTP(S) URL, validating each redirect target against SSRF rules."""
+) -> tuple[str, str]:
+    """Write a bounded, decompressed body and return its content type and final URL."""
     validate_public_http_url(url)
     current_url = url
 
     for _ in range(max_redirects):
-        response = requests.get(
-            current_url,
-            headers=headers,
-            timeout=timeout,
-            allow_redirects=False,
-        )
-        if response.status_code not in _REDIRECT_STATUS_CODES:
-            response.raise_for_status()
-            return response, current_url
+        with _NoRedirectSession() as session:
+            response = session.get(
+                current_url,
+                headers=headers,
+                timeout=timeout,
+                allow_redirects=False,
+                stream=True,
+            )
 
-        location = response.headers.get("Location")
-        if not location:
-            response.raise_for_status()
-            return response, current_url
+            try:
+                location = response.headers.get("Location")
+                if response.status_code in _REDIRECT_STATUS_CODES and location:
+                    current_url = urljoin(current_url, location)
+                    validate_public_http_url(current_url)
+                    continue
 
-        current_url = urljoin(current_url, location)
-        validate_public_http_url(current_url)
+                response.raise_for_status()
+
+                try:
+                    content_length = int(response.headers.get("Content-Length", ""))
+                except ValueError:
+                    content_length = 0
+                if content_length > max_bytes:
+                    raise ValueError("HTTP response exceeds size limit")
+
+                size = 0
+                # iter_content decodes Content-Encoding, so compressed bodies obey the same limit.
+                for chunk in response.iter_content(chunk_size=64 * 1024):
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise ValueError("HTTP response exceeds size limit")
+                    destination.write(chunk)
+
+                return response.headers.get("Content-Type", ""), current_url
+            finally:
+                response.close()
 
     raise ValueError(f"Too many redirects while fetching {url}")

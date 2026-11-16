@@ -1,12 +1,15 @@
 import logging
+import math
 import re
+import struct
 from pathlib import Path
+from tempfile import TemporaryDirectory, TemporaryFile
 from typing import ClassVar, Optional
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 from PIL import Image
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon, QImage, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
@@ -14,6 +17,58 @@ from web_app_launcher.models import WebApp
 from web_app_launcher.utils.url_safety import fetch_public_http_response
 
 logger = logging.getLogger(__name__)
+
+MAX_HTML_BYTES = 2 * 1024 * 1024
+MAX_ICON_BYTES = 5 * 1024 * 1024
+MAX_ICON_CANDIDATES = 8
+MAX_RASTER_SIDE = 8192
+MAX_RASTER_PIXELS = 16_000_000
+ICON_SIZE = 256
+RASTER_FORMATS = ("PNG", "JPEG", "ICO", "WEBP")
+
+
+def _validate_raster_dimensions(width: int, height: int) -> None:
+    if (
+        width <= 0
+        or height <= 0
+        or width > MAX_RASTER_SIDE
+        or height > MAX_RASTER_SIDE
+        or width * height > MAX_RASTER_PIXELS
+    ):
+        raise ValueError("Icon dimensions exceed limits")
+
+
+def _validate_ico_dimensions(icon_path: Path) -> None:
+    # Pillow's ICO plugin loads pixels inside Image.open. Check embedded headers first,
+    # including their actual dimensions rather than trusting the one-byte directory sizes.
+    with icon_path.open("rb") as source:
+        header = source.read(6)
+        if not header.startswith(b"\x00\x00\x01\x00"):
+            return
+
+        count = struct.unpack_from("<H", header, 4)[0]
+        entries = source.read(count * 16)
+        if len(entries) != count * 16:
+            raise ValueError("Truncated ICO directory")
+
+        for index in range(count):
+            offset = struct.unpack_from("<I", entries, index * 16 + 12)[0]
+            source.seek(offset)
+            frame_header = source.read(24)
+
+            if frame_header.startswith(b"\x89PNG\r\n\x1a\n"):
+                width, height = struct.unpack_from(">II", frame_header, 16)
+            else:
+                header_size = struct.unpack_from("<I", frame_header)[0]
+                if header_size == 12:
+                    width, height = struct.unpack_from("<HH", frame_header, 4)
+                elif header_size >= 40:
+                    width, height = struct.unpack_from("<ii", frame_header, 4)
+                else:
+                    raise ValueError("Invalid ICO bitmap header")
+                height //= 2  # DIB height includes the transparency mask.
+
+            _validate_raster_dimensions(width, height)
 
 
 class MetadataFetcher:
@@ -37,27 +92,28 @@ class MetadataFetcher:
             Path to saved icon or None if download failed
         """
         try:
-            response, _final_url = fetch_public_http_response(
-                icon_url,
-                headers=self.HEADERS,
-                timeout=10,
-            )
+            with TemporaryDirectory(dir=self.icons_dir) as temporary_dir:
+                temporary_path = Path(temporary_dir)
+                download_path = temporary_path / "download"
 
-            suffix = self._guess_suffix(
-                icon_url,
-                response.headers.get("content-type", ""),
-            )
-            icon_path = WebApp.get_icon_path(self.icons_dir, app_uuid, suffix)
+                with download_path.open("wb") as destination:
+                    content_type, _final_url = fetch_public_http_response(
+                        icon_url,
+                        headers=self.HEADERS,
+                        destination=destination,
+                        max_bytes=MAX_ICON_BYTES,
+                        timeout=10,
+                    )
 
-            with open(icon_path, "wb") as f:
-                f.write(response.content)
+                suffix = self._guess_suffix(icon_url, content_type)
+                icon_path = download_path.with_suffix(f".{suffix}")
+                download_path.rename(icon_path)
+                optimized = self._optimize_icon(icon_path)
 
-            optimized = self._optimize_icon(icon_path)
-            if optimized.suffix.lower() != ".png":
-                logger.warning("Icon at %s is not displayable after optimization", icon_path)
-                return None
+                final_path = WebApp.get_icon_path(self.icons_dir, app_uuid, "png")
+                optimized.replace(final_path)
 
-            return optimized
+                return final_path
 
         except Exception:
             logger.warning("Failed to download icon from %s", icon_url)
@@ -88,52 +144,65 @@ class MetadataFetcher:
         return "png"
 
     def _optimize_icon(self, icon_path: Path) -> Path:
-        if icon_path.suffix.lower() == ".svg":
-            return self._rasterize_svg(icon_path)
+        # Keep the source intact until a complete PNG can atomically replace the target.
+        with TemporaryDirectory(dir=icon_path.parent) as temporary_dir:
+            output_path = Path(temporary_dir) / "optimized.png"
 
-        try:
-            with Image.open(icon_path) as img:
-                if img.mode != "RGBA":
-                    img = img.convert("RGBA")
+            if icon_path.suffix.lower() == ".svg":
+                self._rasterize_svg(icon_path, output_path)
+            else:
+                _validate_ico_dimensions(icon_path)
+                with Image.open(icon_path, formats=RASTER_FORMATS) as img:
+                    _validate_raster_dimensions(*img.size)
 
-                max_size = 256
-                if img.width > max_size or img.height > max_size:
-                    img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                    # Image.open starts at the first frame; never advance animations.
+                    with img.convert("RGBA") as converted:
+                        converted.thumbnail((ICON_SIZE, ICON_SIZE), Image.Resampling.LANCZOS)
+                        converted.save(output_path, "PNG", optimize=True)
 
-                output_path = icon_path.with_suffix(".png")
-                img.save(output_path, "PNG", optimize=True)
+            final_path = icon_path.with_suffix(".png")
+            output_path.replace(final_path)
+            if final_path != icon_path:
+                icon_path.unlink()
 
-                if output_path != icon_path:
-                    icon_path.unlink()
+            return final_path
 
-                return output_path
-
-        except Exception:
-            logger.warning("Failed to optimize icon at %s", icon_path)
-            if icon_path.exists():
-                icon_path.unlink(missing_ok=True)
-            raise
-
-    def _rasterize_svg(self, svg_path: Path) -> Path:
+    def _rasterize_svg(self, svg_path: Path, output_path: Path) -> None:
         renderer = QSvgRenderer(str(svg_path))
         if not renderer.isValid():
             raise ValueError(f"Invalid SVG icon at {svg_path}")
+        renderer.setAnimationEnabled(False)
 
-        size = renderer.defaultSize()
-        if size.width() <= 0 or size.height() <= 0:
-            size = QSize(256, 256)
+        # Use floating point viewBox dimensions: defaultSize can overflow for huge SVGs.
+        size = renderer.viewBoxF().size()
+        if (
+            not size.isValid()
+            or size.isEmpty()
+            or not math.isfinite(size.width())
+            or not math.isfinite(size.height())
+        ):
+            size.setWidth(ICON_SIZE)
+            size.setHeight(ICON_SIZE)
 
-        image = QImage(size, QImage.Format.Format_ARGB32)
+        size.scale(ICON_SIZE, ICON_SIZE, Qt.AspectRatioMode.KeepAspectRatio)
+        bounded_size = QSize(max(1, int(size.width())), max(1, int(size.height())))
+
+        image = QImage(bounded_size, QImage.Format.Format_ARGB32)
+        if image.isNull():
+            raise ValueError("Could not allocate SVG output")
+
         image.fill(0)
         painter = QPainter(image)
-        renderer.render(painter)
-        painter.end()
+        if not painter.isActive():
+            raise ValueError("Could not paint SVG output")
 
-        output_path = svg_path.with_suffix(".png")
-        image.save(str(output_path), "PNG")
-        if output_path != svg_path:
-            svg_path.unlink()
-        return output_path
+        try:
+            renderer.render(painter)
+        finally:
+            painter.end()
+
+        if not image.save(str(output_path), "PNG"):
+            raise ValueError("Could not save SVG output")
 
     def load_q_icon(self, icon_path: Optional[Path]) -> QIcon:
         if not icon_path or not icon_path.exists():
@@ -149,12 +218,17 @@ class MetadataFetcher:
             Tuple of (title, description, icon_urls)
         """
         try:
-            response, final_url = fetch_public_http_response(
-                url,
-                headers=self.HEADERS,
-                timeout=10,
-            )
-            soup = BeautifulSoup(response.text, "html.parser")
+            with TemporaryFile() as destination:
+                _content_type, final_url = fetch_public_http_response(
+                    url,
+                    headers=self.HEADERS,
+                    destination=destination,
+                    max_bytes=MAX_HTML_BYTES,
+                    timeout=10,
+                )
+
+                destination.seek(0)
+                soup = BeautifulSoup(destination, "html.parser")
 
             title = self._extract_title(soup, final_url)
             description = self._extract_description(soup)
@@ -209,22 +283,23 @@ class MetadataFetcher:
         urls: list[str] = []
         seen: set[str] = set()
 
-        def add_url(href: str | None) -> None:
-            if not href:
-                return
-            absolute = urljoin(base_url, str(href))
-            if absolute not in seen:
-                seen.add(absolute)
-                urls.append(absolute)
-
         for link in soup.find_all(
             "link",
             rel=re.compile(r"apple-touch-icon|icon|shortcut icon", re.I),
         ):
-            add_url(link.get("href"))
+            href = link.get("href")
+            if not href:
+                continue
+
+            absolute = urljoin(base_url, str(href))
+            if absolute not in seen:
+                seen.add(absolute)
+                urls.append(absolute)
+                if len(urls) == MAX_ICON_CANDIDATES:
+                    break
 
         if not urls:
             parsed = urlparse(base_url)
-            add_url(f"{parsed.scheme}://{parsed.netloc}/favicon.ico")
+            urls.append(f"{parsed.scheme}://{parsed.netloc}/favicon.ico")
 
         return urls
