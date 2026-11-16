@@ -24,6 +24,28 @@ from web_app_launcher.utils.browser_manager import BrowserManager
 from web_app_launcher.utils.config_manager import ConfigManager
 from web_app_launcher.utils.path_manager import PathManager
 
+CLEANUP_TIMEOUT_SECONDS = 3
+COMMAND_TIMEOUT_MS = 500
+CONNECT_TIMEOUT_MS = 1000
+EVENT_POLL_INTERVAL_SECONDS = 0.001
+FRAGMENT_INTERVAL_SECONDS = 0.02
+INCOMPLETE_REQUEST_WATCHDOG_SECONDS = 0.6
+INCOMPLETE_REQUEST_TIMEOUT_MS = 180
+STARTUP_RACE_ATTEMPTS = 3
+MAX_CLIENT_REQUEST_SECONDS = 0.2
+MAX_INCOMPLETE_REQUEST_SECONDS = 0.4
+PROCESS_TIMEOUT_SECONDS = 5
+REPLY_FRAGMENT_DELAY_SECONDS = 0.03
+REPLY_HOLD_SECONDS = 0.25
+RESPONSE_TIMEOUT_SECONDS = 2
+SHORT_COMMAND_TIMEOUT_MS = 100
+MILLISECONDS_PER_SECOND = 1000
+CONNECT_DELAY_SECONDS = 0.04
+WRITE_DELAY_SECONDS = 0.03
+STALE_SOCKET_AGE_SECONDS = 86400
+EVENT_WAIT_TIMEOUT_SECONDS = 1
+
+
 WORKER = """
 import json
 import sys
@@ -33,6 +55,9 @@ from web_app_launcher.tray.tray_service import TrayService
 from web_app_launcher.utils.browser_manager import BrowserManager
 from web_app_launcher.utils.config_manager import ConfigManager
 from web_app_launcher.utils.path_manager import PathManager
+
+WORKER_WATCHDOG_MS = 15000
+
 
 app = QCoreApplication([])
 app.setApplicationName(sys.argv[1])
@@ -46,7 +71,7 @@ print(json.dumps({"host": service.is_server,
                   "socket": str(paths.tray_socket_file)}), flush=True)
 notifier = QSocketNotifier(sys.stdin.fileno(), QSocketNotifier.Type.Read, app)
 notifier.activated.connect(lambda *args: app.quit())
-QTimer.singleShot(15000, app.quit)
+QTimer.singleShot(WORKER_WATCHDOG_MS, app.quit)
 app.exec()
 """
 
@@ -103,11 +128,11 @@ def workers(tray_paths):
     for process in processes:
         if process.poll() is None:
             process.kill()
-        process.communicate(timeout=5)
+        process.communicate(timeout=PROCESS_TIMEOUT_SECONDS)
 
 
 def _read_line(process):
-    readable, _, _ = select.select([process.stdout], [], [], 5)
+    readable, _, _ = select.select([process.stdout], [], [], PROCESS_TIMEOUT_SECONDS)
     assert readable, "Tray worker did not respond"
     line = process.stdout.readline().strip()
     assert line, f"Tray worker exited: {process.poll()}"
@@ -120,18 +145,18 @@ def _start(process):
 
 
 def _stop(process):
-    _, errors = process.communicate(input="stop\n", timeout=5)
+    _, errors = process.communicate(input="stop\n", timeout=PROCESS_TIMEOUT_SECONDS)
     assert process.returncode == 0, errors
 
 
 def _ping(paths, qt_app, token):
     client = QLocalSocket()
     client.connectToServer(str(paths.tray_socket_file))
-    assert client.waitForConnected(1000), client.errorString()
+    assert client.waitForConnected(CONNECT_TIMEOUT_MS), client.errorString()
     client.write(json.dumps({"cmd": "ping", "uuid": "", "token": token}).encode("utf-8") + b"\n")
     client.flush()
     response = bytearray()
-    deadline = time.monotonic() + 2
+    deadline = time.monotonic() + RESPONSE_TIMEOUT_SECONDS
     while b"\n" not in response and time.monotonic() < deadline:
         qt_app.processEvents()
         response.extend(bytes(client.readAll()))
@@ -152,7 +177,7 @@ def test_second_instance_preserves_live_socket_and_token(tray_paths, qt_app, ser
     assert host.is_server
     token = read_session_token(tray_paths.config_dir)
     socket_inode = tray_paths.tray_socket_file.stat().st_ino
-    old_time = time.time() - 86400
+    old_time = time.time() - STALE_SOCKET_AGE_SECONDS
     os.utime(tray_paths.tray_lock_file, (old_time, old_time))
 
     client = service_factory()
@@ -259,7 +284,7 @@ def test_unlocked_live_server_is_not_replaced(tray_paths, service_factory):
         assert tray_paths.tray_socket_file.stat().st_ino == inode
         client = QLocalSocket()
         client.connectToServer(str(tray_paths.tray_socket_file))
-        assert client.waitForConnected(1000)
+        assert client.waitForConnected(CONNECT_TIMEOUT_MS)
         client.abort()
         _assert_unlocked(tray_paths)
     finally:
@@ -347,7 +372,7 @@ def test_socket_replaced_during_probe_is_not_removed(tray_paths, service_factory
     assert tray_paths.tray_socket_file.read_text(encoding="utf-8") == "replacement"
 
 
-@pytest.mark.parametrize("attempt", range(3))
+@pytest.mark.parametrize("attempt", range(STARTUP_RACE_ATTEMPTS))
 def test_simultaneous_process_start_has_one_host(attempt, tray_paths, workers, qt_app):
     first = workers("gui")
     second = workers("cli")
@@ -359,7 +384,7 @@ def test_simultaneous_process_start_has_one_host(attempt, tray_paths, workers, q
     winner = next(result for result in results if result["host"])
     assert read_session_token(tray_paths.config_dir) == winner["token"]
     _ping(tray_paths, qt_app, winner["token"])
-    assert send_tray_command(TrayCommand.PING, tray_paths.config_dir, timeout_ms=1000)
+    assert send_tray_command(TrayCommand.PING, tray_paths.config_dir, timeout_ms=CONNECT_TIMEOUT_MS)
 
 
 def test_process_shutdown_allows_restart(tray_paths, workers, qt_app, service_factory):
@@ -380,7 +405,7 @@ def test_crashed_host_recovers_stale_lock_and_socket(tray_paths, workers, qt_app
     result = json.loads(_read_line(process))
     assert result["host"]
     process.kill()
-    process.wait(timeout=5)
+    process.wait(timeout=PROCESS_TIMEOUT_SECONDS)
     assert tray_paths.tray_socket_file.exists()
     assert tray_paths.tray_lock_file.exists()
     assert service_factory().is_server
@@ -407,7 +432,7 @@ def ipc_client(tray_paths):
     def connect():
         client = QLocalSocket()
         client.connectToServer(str(tray_paths.tray_socket_file))
-        assert client.waitForConnected(1000)
+        assert client.waitForConnected(CONNECT_TIMEOUT_MS)
         clients.append(client)
         return client
 
@@ -416,11 +441,11 @@ def ipc_client(tray_paths):
         client.abort()
 
 
-def _wait(qt_app, predicate, timeout=1):
+def _wait(qt_app, predicate, timeout=EVENT_WAIT_TIMEOUT_SECONDS):
     deadline = time.monotonic() + timeout
     while not predicate() and time.monotonic() < deadline:
         qt_app.processEvents()
-        time.sleep(0.001)
+        time.sleep(EVENT_POLL_INTERVAL_SECONDS)
     assert predicate(), "Timed out waiting for IPC state"
 
 
@@ -633,20 +658,20 @@ def test_incomplete_request_timeout_is_fixed_and_cleans_objects(
 ):
     import shiboken6
 
-    monkeypatch.setattr(tray_service, "REQUEST_TIMEOUT_MS", 180)
+    monkeypatch.setattr(tray_service, "REQUEST_TIMEOUT_MS", INCOMPLETE_REQUEST_TIMEOUT_MS)
     client = ipc_client()
     _wait(qt_app, lambda: bool(ipc_host._connections))
     server_socket, state = next(iter(ipc_host._connections.items()))
     timer = state.timer
     assert server_socket.readBufferSize() == tray_service.MAX_MESSAGE_BYTES
     start = time.monotonic()
-    while ipc_host._connections and time.monotonic() - start < 0.6:
+    while ipc_host._connections and time.monotonic() - start < INCOMPLETE_REQUEST_WATCHDOG_SECONDS:
         if client.state() == QLocalSocket.LocalSocketState.ConnectedState:
             client.write(b" ")
             client.flush()
         qt_app.processEvents()
-        time.sleep(0.02)
-    assert time.monotonic() - start < 0.4
+        time.sleep(FRAGMENT_INTERVAL_SECONDS)
+    assert time.monotonic() - start < MAX_INCOMPLETE_REQUEST_SECONDS
     assert not ipc_host._connections
     ipc_host.launcher.launch_app.assert_not_called()
     qt_app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
@@ -669,22 +694,27 @@ def test_unfinished_connection_cleanup(shutdown, ipc_host, ipc_client, qt_app):
 
 
 REPLY_WORKER = """
+REPLY_SOCKET_TIMEOUT_SECONDS = 2
+
 import json
 import socket
 import sys
 import time
 
+MAX_REQUEST_BYTES = 16 * 1024
+
+
 path, fragments, delay, hold = sys.argv[1:]
 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
     listener.bind(path)
     listener.listen(1)
-    listener.settimeout(2)
+    listener.settimeout(REPLY_SOCKET_TIMEOUT_SECONDS)
     print("ready", flush=True)
     with listener.accept()[0] as peer:
-        peer.settimeout(2)
+        peer.settimeout(REPLY_SOCKET_TIMEOUT_SECONDS)
         request = bytearray()
         while b"\\n" not in request:
-            data = peer.recv(16384 - len(request))
+            data = peer.recv(MAX_REQUEST_BYTES - len(request))
             assert data, "Client disconnected before sending its command"
             request.extend(data)
         print(json.dumps(json.loads(request)), flush=True)
@@ -726,17 +756,19 @@ def reply_server(tray_paths):
     yield start
     for peer in peers:
         try:
-            _, errors = peer.communicate(timeout=3)
+            _, errors = peer.communicate(timeout=CLEANUP_TIMEOUT_SECONDS)
             assert peer.returncode == 0, errors
         finally:
             if peer.poll() is None:
                 peer.kill()
-                peer.communicate(timeout=3)
+                peer.communicate(timeout=CLEANUP_TIMEOUT_SECONDS)
 
 
 def test_client_waits_for_fragmented_confirmation(reply_server, tray_paths, qt_app):
-    peer = reply_server([b'{"ok"', b": true}", b"\n"], delay=0.03)
-    assert send_tray_command(TrayCommand.LAUNCH, tray_paths.config_dir, "known", timeout_ms=500)
+    peer = reply_server([b'{"ok"', b": true}", b"\n"], delay=REPLY_FRAGMENT_DELAY_SECONDS)
+    assert send_tray_command(
+        TrayCommand.LAUNCH, tray_paths.config_dir, "known", timeout_ms=COMMAND_TIMEOUT_MS
+    )
     assert json.loads(_read_line(peer))["cmd"] == "launch"
 
 
@@ -765,13 +797,17 @@ def test_client_waits_for_fragmented_confirmation(reply_server, tray_paths, qt_a
 def test_client_rejects_invalid_confirmation(response, reply_server, tray_paths, qt_app):
     reply_server([response])
     with pytest.raises(tray_service.TrayCommandError, match="Invalid tray response"):
-        send_tray_command(TrayCommand.LAUNCH, tray_paths.config_dir, "known", timeout_ms=500)
+        send_tray_command(
+            TrayCommand.LAUNCH, tray_paths.config_dir, "known", timeout_ms=COMMAND_TIMEOUT_MS
+        )
 
 
 def test_client_reports_server_rejection(reply_server, tray_paths, qt_app):
     reply_server([b'{"ok": false, "error": "Unknown application"}\n'])
     with pytest.raises(tray_service.TrayCommandError, match="Unknown application"):
-        send_tray_command(TrayCommand.LAUNCH, tray_paths.config_dir, "missing", timeout_ms=500)
+        send_tray_command(
+            TrayCommand.LAUNCH, tray_paths.config_dir, "missing", timeout_ms=COMMAND_TIMEOUT_MS
+        )
 
 
 @pytest.mark.parametrize("extra", [0, 1])
@@ -781,21 +817,27 @@ def test_client_response_size_boundary(extra, reply_server, tray_paths, qt_app):
     reply_server([response])
     if extra:
         with pytest.raises(tray_service.TrayCommandError, match="exceeds 16 KiB"):
-            send_tray_command(TrayCommand.PING, tray_paths.config_dir, timeout_ms=500)
+            send_tray_command(
+                TrayCommand.PING, tray_paths.config_dir, timeout_ms=COMMAND_TIMEOUT_MS
+            )
     else:
-        assert send_tray_command(TrayCommand.PING, tray_paths.config_dir, timeout_ms=500)
+        assert send_tray_command(
+            TrayCommand.PING, tray_paths.config_dir, timeout_ms=COMMAND_TIMEOUT_MS
+        )
 
 
 @pytest.mark.parametrize("mode", ["timeout", "disconnect", "partial"])
 def test_sent_command_without_confirmation_is_uncertain(mode, reply_server, tray_paths, qt_app):
     peer = reply_server(
         [b'{"ok": true}'] if mode == "partial" else [],
-        hold=0 if mode == "disconnect" else 0.25,
+        hold=0 if mode == "disconnect" else REPLY_HOLD_SECONDS,
     )
     start = time.monotonic()
     with pytest.raises(tray_service.TrayCommandError, match="may have been executed"):
-        send_tray_command(TrayCommand.LAUNCH, tray_paths.config_dir, "known", timeout_ms=100)
-    assert time.monotonic() - start < 0.2
+        send_tray_command(
+            TrayCommand.LAUNCH, tray_paths.config_dir, "known", timeout_ms=SHORT_COMMAND_TIMEOUT_MS
+        )
+    assert time.monotonic() - start < MAX_CLIENT_REQUEST_SECONDS
     assert json.loads(_read_line(peer))["cmd"] == "launch"
 
 
@@ -803,7 +845,9 @@ def test_unavailable_service_allows_local_fallback(tray_paths, qt_app):
     assert send_tray_command(TrayCommand.LAUNCH, tray_paths.config_dir, "known") is False
     create_session_token(tray_paths.config_dir)
     assert (
-        send_tray_command(TrayCommand.LAUNCH, tray_paths.config_dir, "known", timeout_ms=100)
+        send_tray_command(
+            TrayCommand.LAUNCH, tray_paths.config_dir, "known", timeout_ms=SHORT_COMMAND_TIMEOUT_MS
+        )
         is False
     )
 
@@ -908,19 +952,21 @@ def test_client_uses_one_deadline_for_connect_write_and_response(
 ):
     clock = [0.0]
     deadline = MagicMock()
-    deadline.remainingTime.side_effect = lambda: max(0, round(100 - clock[0] * 1000))
+    deadline.remainingTime.side_effect = lambda: max(
+        0, round(100 - clock[0] * MILLISECONDS_PER_SECOND)
+    )
     monkeypatch.setattr(tray_service, "QDeadlineTimer", lambda *args: deadline)
 
     def connect(timeout):
-        clock[0] += 0.04
+        clock[0] += CONNECT_DELAY_SECONDS
         return True
 
     def write(timeout):
-        clock[0] += 0.03
+        clock[0] += WRITE_DELAY_SECONDS
         return True
 
     def read(timeout):
-        clock[0] += timeout / 1000
+        clock[0] += timeout / MILLISECONDS_PER_SECOND
         return False
 
     mock_client.waitForConnected.side_effect = connect
@@ -930,7 +976,9 @@ def test_client_uses_one_deadline_for_connect_write_and_response(
     mock_client.bytesAvailable.return_value = 0
     mock_client.waitForReadyRead.side_effect = read
     with pytest.raises(tray_service.TrayCommandError, match="may have been executed"):
-        send_tray_command(TrayCommand.LAUNCH, tray_paths.config_dir, "known", timeout_ms=100)
+        send_tray_command(
+            TrayCommand.LAUNCH, tray_paths.config_dir, "known", timeout_ms=SHORT_COMMAND_TIMEOUT_MS
+        )
     assert mock_client.waitForConnected.call_args.args[0] == 100
     assert 59 <= mock_client.waitForBytesWritten.call_args.args[0] <= 61
     assert 29 <= mock_client.waitForReadyRead.call_args.args[0] <= 31
@@ -974,10 +1022,10 @@ def test_cli_lost_confirmation_does_not_repeat_sent_launch(
 
     from web_app_launcher import main
 
-    peer = reply_server([], hold=0.25)
+    peer = reply_server([], hold=REPLY_HOLD_SECONDS)
     remote = MagicMock(
         side_effect=lambda uuid, config: send_tray_command(
-            TrayCommand.LAUNCH, config, uuid, timeout_ms=100
+            TrayCommand.LAUNCH, config, uuid, timeout_ms=SHORT_COMMAND_TIMEOUT_MS
         )
     )
     factory = MagicMock()

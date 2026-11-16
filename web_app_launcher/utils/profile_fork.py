@@ -10,6 +10,9 @@ from web_app_launcher.utils.process_group import process_group_is_running
 
 logger = logging.getLogger(__name__)
 
+EPHEMERAL_SESSION_PATH_DEPTH = 2  # Application UUID followed by session UUID.
+PROCESS_POLL_INTERVAL_SECONDS = 0.1
+
 
 def copy_profile_tree(source: Path, dest: Path) -> None:
     if not source.exists():
@@ -47,7 +50,7 @@ def validate_ephemeral_session_path(path: Path, ephemeral_base_dir: Path) -> Pat
         raise ValueError(f"Refusing ephemeral path outside base directory: {path}")
 
     relative = target.relative_to(base)
-    if len(relative.parts) != 2:
+    if len(relative.parts) != EPHEMERAL_SESSION_PATH_DEPTH:
         raise ValueError(f"Refusing unexpected ephemeral path shape: {path}")
 
     if any(part in {"", ".", ".."} for part in relative.parts):
@@ -102,7 +105,7 @@ def _wait_and_cleanup(
             cleanup_ephemeral_profile(ephemeral_path, ephemeral_base_dir)
             return
 
-        time.sleep(0.1)
+        time.sleep(PROCESS_POLL_INTERVAL_SECONDS)
 
 
 def watch_process_and_cleanup(

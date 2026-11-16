@@ -1,4 +1,5 @@
 import shutil
+import stat
 import sys
 from pathlib import Path
 
@@ -48,7 +49,7 @@ StartupWMClass={APP_NAME}
 
         desktop_file = self.get_desktop_file_path(app.app_uuid)
         desktop_file.write_text(desktop_content, encoding="utf-8")
-        desktop_file.chmod(0o644)
+        desktop_file.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
 
     def remove_desktop_file(self, app_uuid: str) -> None:
         desktop_file = self.get_desktop_file_path(app_uuid)

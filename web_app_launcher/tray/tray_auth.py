@@ -1,19 +1,24 @@
 import logging
 import re
 import secrets
+import stat
 from pathlib import Path
 from typing import TypeGuard
 
-from web_app_launcher.constants import TRAY_SESSION_FILE
+from web_app_launcher.constants import (
+    TRAY_SESSION_FILE,
+    TRAY_SESSION_TOKEN_BYTES,
+    TRAY_SESSION_TOKEN_HEX_LENGTH,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def create_session_token(config_dir: Path) -> str:
-    token = secrets.token_hex(32)
+    token = secrets.token_hex(TRAY_SESSION_TOKEN_BYTES)
     session_path = config_dir / TRAY_SESSION_FILE
     session_path.write_text(token, encoding="utf-8")
-    session_path.chmod(0o600)
+    session_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     return token
 
 
@@ -36,4 +41,7 @@ def validate_session_token(config_dir: Path, token: object) -> bool:
 
 
 def _valid_token_format(token: object) -> TypeGuard[str]:
-    return isinstance(token, str) and re.fullmatch(r"[0-9a-f]{64}", token) is not None
+    return (
+        isinstance(token, str)
+        and re.fullmatch(rf"[0-9a-f]{{{TRAY_SESSION_TOKEN_HEX_LENGTH}}}", token) is not None
+    )

@@ -16,6 +16,11 @@ from web_app_launcher.utils.window_activator import try_activate_pid
 
 logger = logging.getLogger(__name__)
 
+PROCESS_POLL_INTERVAL_MS = 2000
+STOP_POLL_INTERVAL_MS = 100
+STOP_GRACE_PERIOD_MS = 5000
+INIT_PROCESS_ID = 1
+
 
 @dataclass
 class _RunningEntry:
@@ -37,7 +42,7 @@ class TrayManager(QObject):
         super().__init__(parent)
         self._running: dict[str, _RunningEntry] = {}
         self._poll_timer = QTimer(self)
-        self._poll_timer.setInterval(2000)
+        self._poll_timer.setInterval(PROCESS_POLL_INTERVAL_MS)
         self._poll_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._poll_timer.timeout.connect(self._poll_processes)
 
@@ -142,12 +147,16 @@ class TrayManager(QObject):
             raise RuntimeError(message)
 
         if self._signal_group(entry, signal.SIGTERM):
-            entry.stop_deadline = QDeadlineTimer(5000, Qt.TimerType.PreciseTimer)
-            self._poll_timer.setInterval(100)
+            entry.stop_deadline = QDeadlineTimer(STOP_GRACE_PERIOD_MS, Qt.TimerType.PreciseTimer)
+            self._poll_timer.setInterval(STOP_POLL_INTERVAL_MS)
 
     def _signal_group(self, entry: _RunningEntry, sig: signal.Signals) -> bool:
         try:
-            if entry.pgid <= 1 or entry.pgid == os.getpgrp() or entry.pgid != entry.process.pid:
+            if (
+                entry.pgid <= INIT_PROCESS_ID
+                or entry.pgid == os.getpgrp()
+                or entry.pgid != entry.process.pid
+            ):
                 raise ValueError(f"Refusing unsafe process group {entry.pgid}")
 
             try:
@@ -176,7 +185,7 @@ class TrayManager(QObject):
         if not self._running:
             self._poll_timer.stop()
         elif not any(entry.stop_deadline is not None for entry in self._running.values()):
-            self._poll_timer.setInterval(2000)
+            self._poll_timer.setInterval(PROCESS_POLL_INTERVAL_MS)
 
         logger.info("Tray icon removed for %s", entry.app.name)
         self.running_count_changed.emit(len(self._running))

@@ -1,4 +1,5 @@
 import QtQuick
+import "UiMetrics.mjs" as UiMetrics
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -8,19 +9,19 @@ Dialog {
     title: dialogController.isProfileEditMode ? "Edit Profile" : "New Profile"
     modal: true
 
-    width: Math.min(Screen.desktopAvailableWidth * 0.4, 520)
-    padding: 24
+    width: Math.min(Screen.desktopAvailableWidth * UiMetrics.profileWidthFraction, UiMetrics.profileMaxWidth)
+    padding: UiMetrics.dialogPadding
 
     contentItem: GridLayout {
-        columns: 2
-        columnSpacing: 16
-        rowSpacing: 12
+        columns: UiMetrics.formColumns
+        columnSpacing: UiMetrics.spaceLarge
+        rowSpacing: UiMetrics.spaceRegular
         width: profileDialog.availableWidth
 
         Label {
             text: "Profile Name *"
             Layout.alignment: Qt.AlignTop
-            Layout.minimumWidth: 120
+            Layout.minimumWidth: UiMetrics.formLabelMinimumWidth
         }
         TextField {
             id: profileNameField
@@ -50,8 +51,8 @@ Dialog {
             }
             Label {
                 text: "Browser cannot be changed after creation"
-                font.pixelSize: 10
-                opacity: 0.7
+                font.pixelSize: UiMetrics.fontHelp
+                opacity: UiMetrics.opacityHint
                 font.italic: true
                 visible: dialogController.isProfileEditMode
             }
@@ -64,7 +65,7 @@ Dialog {
         TextArea {
             id: descriptionField
             Layout.fillWidth: true
-            Layout.preferredHeight: 100
+            Layout.preferredHeight: UiMetrics.profileDescriptionHeight
             placeholderText: "Describe the purpose of this profile..."
             text: dialogController.profileDescription
             onTextChanged: dialogController.profileDescription = text

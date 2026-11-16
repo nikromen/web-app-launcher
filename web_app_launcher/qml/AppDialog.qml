@@ -1,4 +1,5 @@
 import QtQuick
+import "UiMetrics.mjs" as UiMetrics
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -8,33 +9,33 @@ Dialog {
     title: dialogController.isAppEditMode ? "Edit Application" : "New Application"
     modal: true
 
-    width: Math.min(Screen.desktopAvailableWidth * 0.55, 720)
-    padding: 24
+    width: Math.min(Screen.desktopAvailableWidth * UiMetrics.appDialogWidthFraction, UiMetrics.appDialogMaxWidth)
+    padding: UiMetrics.dialogPadding
 
     contentItem: ScrollView {
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-        implicitHeight: Math.min(Screen.desktopAvailableHeight * 0.65, contentLayout.implicitHeight)
+        implicitHeight: Math.min(Screen.desktopAvailableHeight * UiMetrics.scrollContentHeightFraction, contentLayout.implicitHeight)
 
         ColumnLayout {
             id: contentLayout
             width: appDialog.availableWidth
-            spacing: 20
+            spacing: UiMetrics.spaceSection
 
             GroupBox {
                 Layout.fillWidth: true
                 title: "Basic Information"
 
                 GridLayout {
-                    columns: 2
-                    columnSpacing: 16
-                    rowSpacing: 12
+                    columns: UiMetrics.formColumns
+                    columnSpacing: UiMetrics.spaceLarge
+                    rowSpacing: UiMetrics.spaceRegular
                     width: parent.width
 
                     Label {
                         text: "Name *"
                         Layout.alignment: Qt.AlignTop
-                        Layout.minimumWidth: 120
+                        Layout.minimumWidth: UiMetrics.formLabelMinimumWidth
                     }
                     TextField {
                         id: nameField
@@ -74,7 +75,7 @@ Dialog {
                     TextArea {
                         id: descriptionField
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 80
+                        Layout.preferredHeight: UiMetrics.appDescriptionHeight
                         placeholderText: "Brief description of the application..."
                         text: dialogController.appDescription
                         onTextChanged: dialogController.appDescription = text
@@ -86,21 +87,21 @@ Dialog {
                         Layout.alignment: Qt.AlignVCenter
                     }
                     RowLayout {
-                        spacing: 16
+                        spacing: UiMetrics.spaceLarge
 
                         Rectangle {
-                            width: 72
-                            height: 72
-                            radius: 6
+                            width: UiMetrics.iconPreviewSize
+                            height: UiMetrics.iconPreviewSize
+                            radius: UiMetrics.iconCornerRadius
                             color: palette.alternateBase
                             border.color: palette.mid
-                            border.width: 1
+                            border.width: UiMetrics.borderWidth
 
                             Image {
                                 id: iconPreview
                                 anchors.centerIn: parent
-                                width: 56
-                                height: 56
+                                width: UiMetrics.iconPreviewImageSize
+                                height: UiMetrics.iconPreviewImageSize
                                 source: dialogController.iconPath
                                 fillMode: Image.PreserveAspectFit
                                 cache: false
@@ -111,9 +112,9 @@ Dialog {
                             Label {
                                 anchors.centerIn: parent
                                 text: dialogController.appName ? dialogController.appName.substring(0, 1).toUpperCase() : "A"
-                                font.pixelSize: 28
+                                font.pixelSize: UiMetrics.fontIconPlaceholder
                                 font.weight: Font.DemiBold
-                                opacity: 0.5
+                                opacity: UiMetrics.opacityPlaceholder
                                 visible: !iconPreview.visible
                             }
                         }
@@ -132,14 +133,14 @@ Dialog {
                 title: "Browser Configuration"
 
                 GridLayout {
-                    columns: 2
-                    columnSpacing: 16
-                    rowSpacing: 12
+                    columns: UiMetrics.formColumns
+                    columnSpacing: UiMetrics.spaceLarge
+                    rowSpacing: UiMetrics.spaceRegular
                     width: parent.width
 
                     Label {
                         text: "Browser"
-                        Layout.minimumWidth: 120
+                        Layout.minimumWidth: UiMetrics.formLabelMinimumWidth
                     }
                     ComboBox {
                         id: browserCombo
@@ -154,8 +155,8 @@ Dialog {
                     }
 
                     RowLayout {
-                        spacing: 4
-                        Layout.minimumWidth: 120
+                        spacing: UiMetrics.spaceTiny
+                        Layout.minimumWidth: UiMetrics.formLabelMinimumWidth
                         Label { text: "Profile mode" }
                         HelpTip {
                             tipText: "Shared — use an existing profile directly; cookies and extensions are shared with other apps on the same profile.\n\n" +
@@ -176,7 +177,7 @@ Dialog {
                     }
 
                     Item {
-                        Layout.columnSpan: 2
+                        Layout.columnSpan: UiMetrics.formColumns
                         Layout.fillWidth: true
                         implicitHeight: profileModeDescriptionLabel.implicitHeight
 
@@ -184,15 +185,15 @@ Dialog {
                             id: profileModeDescriptionLabel
                             width: parent.width
                             wrapMode: Text.WordWrap
-                            opacity: 0.8
-                            font.pixelSize: 12
+                            opacity: UiMetrics.opacityDescription
+                            font.pixelSize: UiMetrics.fontSecondary
                             text: dialogController.profileModeDescription
                         }
                     }
 
                     RowLayout {
-                        spacing: 4
-                        Layout.minimumWidth: 120
+                        spacing: UiMetrics.spaceTiny
+                        Layout.minimumWidth: UiMetrics.formLabelMinimumWidth
                         visible: dialogController.profileSourceEnabled
                         Label {
                             text: dialogController.profileMode === "dedicated" ? "Template profile" : "Source profile"
@@ -225,12 +226,12 @@ Dialog {
                     }
 
                     Label {
-                        Layout.columnSpan: 2
+                        Layout.columnSpan: UiMetrics.formColumns
                         Layout.fillWidth: true
                         visible: !dialogController.profileSourceEnabled && dialogController.dedicatedProfileSummary.length > 0
                         wrapMode: Text.WordWrap
-                        opacity: 0.8
-                        font.pixelSize: 12
+                        opacity: UiMetrics.opacityDescription
+                        font.pixelSize: UiMetrics.fontSecondary
                         text: dialogController.dedicatedProfileSummary
                     }
                 }
@@ -262,14 +263,14 @@ Dialog {
                 title: "Advanced"
 
                 GridLayout {
-                    columns: 2
-                    columnSpacing: 16
-                    rowSpacing: 12
+                    columns: UiMetrics.formColumns
+                    columnSpacing: UiMetrics.spaceLarge
+                    rowSpacing: UiMetrics.spaceRegular
                     width: parent.width
 
                     RowLayout {
-                        spacing: 4
-                        Layout.minimumWidth: 120
+                        spacing: UiMetrics.spaceTiny
+                        Layout.minimumWidth: UiMetrics.formLabelMinimumWidth
                         Label { text: "Extra Arguments" }
                         HelpTip {
                             tipText: "Extra flags appended to the browser launch command. Separate values with spaces, for example: --new-window"
@@ -291,10 +292,10 @@ Dialog {
 
                 ColumnLayout {
                     width: parent.width
-                    spacing: 12
+                    spacing: UiMetrics.spaceRegular
 
                     RowLayout {
-                        spacing: 4
+                        spacing: UiMetrics.spaceTiny
                         CheckBox {
                             id: trayEnabledCheck
                             text: "Enable system tray while this app is running"
@@ -309,15 +310,15 @@ Dialog {
                     GridLayout {
                         enabled: trayEnabledCheck.checked
                         visible: trayEnabledCheck.checked
-                        columns: 2
-                        columnSpacing: 16
-                        rowSpacing: 8
+                        columns: UiMetrics.formColumns
+                        columnSpacing: UiMetrics.spaceLarge
+                        rowSpacing: UiMetrics.spaceCompact
                         Layout.fillWidth: true
 
                         RowLayout {
-                            spacing: 4
+                            spacing: UiMetrics.spaceTiny
                             Layout.alignment: Qt.AlignVCenter
-                            Layout.minimumWidth: 120
+                            Layout.minimumWidth: UiMetrics.formLabelMinimumWidth
                             Label { text: "Show command" }
                             HelpTip {
                                 tipText: "Optional shell command run via bash -c when you choose Show from the tray. Built-in window focus is used only if this is empty or the command fails. Often needed on Wayland. Environment: WEBAPP_ACTION=show, WEBAPP_UUID, WEBAPP_NAME, WEBAPP_URL, WEBAPP_PID, WEBAPP_PROFILE_PATH."
@@ -337,7 +338,7 @@ Dialog {
                         enabled: trayEnabledCheck.checked
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 4
+                            spacing: UiMetrics.spaceTiny
                             Label {
                                 text: "Custom actions"
                                 Layout.fillWidth: true
@@ -356,15 +357,15 @@ Dialog {
 
                     Frame {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: Math.min(240, trayScriptsList.contentHeight + 16)
+                        Layout.preferredHeight: Math.min(UiMetrics.trayScriptsMaxHeight, trayScriptsList.contentHeight + UiMetrics.spaceLarge)
                         visible: trayEnabledCheck.checked && trayScriptsList.count > 0
                         enabled: trayEnabledCheck.checked
 
                         ListView {
                             id: trayScriptsList
                             anchors.fill: parent
-                            anchors.margins: 8
-                            spacing: 10
+                            anchors.margins: UiMetrics.spaceCompact
+                            spacing: UiMetrics.spaceMedium
                             clip: true
                             model: dialogController.trayScriptListModel
 
@@ -374,15 +375,15 @@ Dialog {
                                 required property int index
 
                                 width: trayScriptsList.width
-                                spacing: 6
+                                spacing: UiMetrics.spaceSmall
 
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    spacing: 8
+                                    spacing: UiMetrics.spaceCompact
 
                                     Label {
                                         text: "Name"
-                                        Layout.preferredWidth: 56
+                                        Layout.preferredWidth: UiMetrics.scriptLabelWidth
                                     }
                                     TextField {
                                         id: actionNameField
@@ -401,13 +402,13 @@ Dialog {
 
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    spacing: 8
+                                    spacing: UiMetrics.spaceCompact
 
                                     Label {
                                         text: "Command"
-                                        Layout.preferredWidth: 56
+                                        Layout.preferredWidth: UiMetrics.scriptLabelWidth
                                         Layout.alignment: Qt.AlignTop
-                                        topPadding: 8
+                                        topPadding: UiMetrics.spaceCompact
                                     }
                                     TextField {
                                         id: actionCommandField

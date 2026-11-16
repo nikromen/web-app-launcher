@@ -4,6 +4,7 @@ import tarfile
 from datetime import datetime
 from pathlib import Path
 
+from web_app_launcher.constants import JSON_INDENT
 from web_app_launcher.models import BrowserProfile, WebApp
 from web_app_launcher.utils.path_manager import PathManager
 
@@ -111,7 +112,7 @@ class ConfigManager:
     def _write_json(path: Path, data: dict) -> None:
         temp_path = path.with_suffix(f"{path.suffix}.tmp")
         with open(temp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+            json.dump(data, f, indent=JSON_INDENT)
 
         temp_path.replace(path)
 

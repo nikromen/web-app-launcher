@@ -1,4 +1,5 @@
 import QtQuick
+import "UiMetrics.mjs" as UiMetrics
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
@@ -7,10 +8,10 @@ ApplicationWindow {
     id: mainWindow
     visible: true
 
-    width: Screen.desktopAvailableWidth * 0.8
-    height: Screen.desktopAvailableHeight * 0.8
-    minimumWidth: 800
-    minimumHeight: 600
+    width: Screen.desktopAvailableWidth * UiMetrics.mainWindowScreenFraction
+    height: Screen.desktopAvailableHeight * UiMetrics.mainWindowScreenFraction
+    minimumWidth: UiMetrics.mainWindowMinimumWidth
+    minimumHeight: UiMetrics.mainWindowMinimumHeight
 
     title: "Web App Launcher"
 
@@ -105,25 +106,25 @@ ApplicationWindow {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 16
-        spacing: 12
+        anchors.margins: UiMetrics.spaceLarge
+        spacing: UiMetrics.spaceRegular
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
+            spacing: UiMetrics.spaceCompact
 
             TextField {
                 id: searchField
                 Layout.fillWidth: true
-                Layout.preferredHeight: 36
+                Layout.preferredHeight: UiMetrics.searchFieldHeight
                 placeholderText: "Search applications...  (Ctrl+F, /)"
-                font.pixelSize: 14
+                font.pixelSize: UiMetrics.fontBody
                 onTextChanged: mainController.filter_apps(text)
             }
 
             ToolButton {
-                Layout.preferredWidth: 36
-                Layout.preferredHeight: 36
+                Layout.preferredWidth: UiMetrics.searchButtonSize
+                Layout.preferredHeight: UiMetrics.searchFieldHeight
                 icon.name: "open-menu"
                 display: AbstractButton.IconOnly
                 ToolTip.visible: hovered
@@ -159,9 +160,9 @@ ApplicationWindow {
             GridView {
                 id: appsGridView
                 anchors.fill: parent
-                anchors.margins: 12
-                cellWidth: 180
-                cellHeight: 200
+                anchors.margins: UiMetrics.spaceRegular
+                cellWidth: UiMetrics.appGridCellWidth
+                cellHeight: UiMetrics.appGridCellHeight
                 clip: true
                 focus: true
                 activeFocusOnTab: true
@@ -225,18 +226,18 @@ ApplicationWindow {
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                 delegate: ItemDelegate {
-                    width: appsGridView.cellWidth - 8
-                    height: appsGridView.cellHeight - 8
+                    width: appsGridView.cellWidth - UiMetrics.spaceCompact
+                    height: appsGridView.cellHeight - UiMetrics.spaceCompact
                     highlighted: appsGridView.currentIndex === index
 
                     contentItem: ColumnLayout {
                         anchors.fill: parent
-                        anchors.margins: 12
-                        spacing: 6
+                        anchors.margins: UiMetrics.spaceRegular
+                        spacing: UiMetrics.spaceSmall
 
                         Item {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 80
+                            Layout.preferredHeight: UiMetrics.appTileIconSize
                             Layout.alignment: Qt.AlignHCenter | Qt.AlignTop
 
                             Image {
@@ -251,33 +252,33 @@ ApplicationWindow {
                             Label {
                                 anchors.centerIn: parent
                                 text: model.appName.substring(0, 1)
-                                font.pixelSize: 48
+                                font.pixelSize: UiMetrics.fontAppInitial
                                 visible: !appIcon.visible
                             }
                         }
 
                         Label {
                             text: model.appName
-                            font.pixelSize: 14
+                            font.pixelSize: UiMetrics.fontBody
                             font.weight: Font.Medium
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignTop
                             elide: Text.ElideRight
                             wrapMode: Text.WordWrap
-                            maximumLineCount: 2
+                            maximumLineCount: UiMetrics.appTitleMaxLines
                             Layout.fillWidth: true
                             Layout.alignment: Qt.AlignHCenter | Qt.AlignTop
                         }
 
                         Label {
                             text: model.profileInfo
-                            font.pixelSize: 11
+                            font.pixelSize: UiMetrics.fontCaption
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignTop
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                             Layout.alignment: Qt.AlignHCenter | Qt.AlignTop
-                            opacity: 0.7
+                            opacity: UiMetrics.opacityHint
                         }
 
                         Item { Layout.fillHeight: true }
@@ -322,8 +323,8 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     visible: appsGridView.count === 0
                     text: "No applications yet.\nClick \"Add Application\" to get started."
-                    font.pixelSize: 16
-                    opacity: 0.6
+                    font.pixelSize: UiMetrics.fontEmptyState
+                    opacity: UiMetrics.opacityEmptyState
                     horizontalAlignment: Text.AlignHCenter
                 }
             }
@@ -331,7 +332,7 @@ ApplicationWindow {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
+            spacing: UiMetrics.spaceCompact
 
             Button {
                 text: "Manage Profiles"
@@ -479,7 +480,7 @@ ApplicationWindow {
             profileDialogInstance.close()
             iconPickerInstance.close()
             dialogController.prepare_profile_manager()
-            profileManagerInstance.z = 20
+            profileManagerInstance.z = UiMetrics.dialogZ
             profileManagerInstance.open()
         }
 
@@ -513,13 +514,13 @@ ApplicationWindow {
         }
 
         function onShowProfileEditDialog(profileUuid) {
-            profileDialogInstance.z = profileManagerInstance.visible ? 30 : 20
+            profileDialogInstance.z = profileManagerInstance.visible ? UiMetrics.childDialogZ : UiMetrics.dialogZ
             profileDialogInstance.open()
         }
 
         function onShowIconPicker(paths) {
             iconPickerInstance.iconPaths = paths
-            iconPickerInstance.z = appDialogInstance.visible ? 30 : 20
+            iconPickerInstance.z = appDialogInstance.visible ? UiMetrics.childDialogZ : UiMetrics.dialogZ
             iconPickerInstance.open()
         }
     }
@@ -530,7 +531,7 @@ ApplicationWindow {
         anchors.centerIn: parent
         title: "Import Mode"
         modal: true
-        width: 450
+        width: UiMetrics.messageDialogWidth
 
         property string importFilePath: ""
 
@@ -539,7 +540,7 @@ ApplicationWindow {
                   "Yes: Merge (keep existing apps)\n" +
                   "No: Replace (remove all existing apps)"
             wrapMode: Text.WordWrap
-            padding: 20
+            padding: UiMetrics.spaceSection
         }
 
         footer: DialogButtonBox {
@@ -573,7 +574,7 @@ ApplicationWindow {
         anchors.centerIn: parent
         title: "Backup Recommendation"
         modal: true
-        width: 450
+        width: UiMetrics.messageDialogWidth
 
         contentItem: Label {
             text: "You have chosen to replace your current configuration.\n\n" +
@@ -581,7 +582,7 @@ ApplicationWindow {
                   "for backup purposes before proceeding.\n\n" +
                   "Do you want to proceed with the import?"
             wrapMode: Text.WordWrap
-            padding: 20
+            padding: UiMetrics.spaceSection
         }
 
         footer: DialogButtonBox {

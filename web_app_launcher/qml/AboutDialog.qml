@@ -1,4 +1,5 @@
 import QtQuick
+import "UiMetrics.mjs" as UiMetrics
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -6,16 +7,16 @@ Dialog {
     id: aboutDialog
     title: "About"
     modal: true
-    width: Math.min(Screen.desktopAvailableWidth * 0.4, 480)
-    padding: 24
+    width: Math.min(Screen.desktopAvailableWidth * UiMetrics.aboutWidthFraction, UiMetrics.aboutMaxWidth)
+    padding: UiMetrics.dialogPadding
 
     contentItem: ColumnLayout {
-        spacing: 16
+        spacing: UiMetrics.spaceLarge
         width: aboutDialog.availableWidth
 
         Label {
             text: Qt.application.name
-            font.pixelSize: 20
+            font.pixelSize: UiMetrics.fontHeading
             font.weight: Font.Bold
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
@@ -23,8 +24,8 @@ Dialog {
 
         Label {
             text: "Version " + Qt.application.version
-            font.pixelSize: 12
-            opacity: 0.75
+            font.pixelSize: UiMetrics.fontSecondary
+            opacity: UiMetrics.opacitySecondary
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
         }
@@ -39,8 +40,8 @@ Dialog {
 
         Label {
             text: "Licensed under GPL-3.0-or-later"
-            font.pixelSize: 11
-            opacity: 0.7
+            font.pixelSize: UiMetrics.fontCaption
+            opacity: UiMetrics.opacityHint
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
         }

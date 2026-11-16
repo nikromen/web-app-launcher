@@ -25,6 +25,18 @@ MAX_RASTER_SIDE = 8192
 MAX_RASTER_PIXELS = 16_000_000
 ICON_SIZE = 256
 RASTER_FORMATS = ("PNG", "JPEG", "ICO", "WEBP")
+_ICO_HEADER = struct.Struct("<HHH")
+_ICO_ENTRY = struct.Struct("<BBBBHHII")
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+_PNG_CHUNK_HEADER = struct.Struct(">I4s")
+_PNG_DIMENSIONS = struct.Struct(">II")
+_PNG_DIMENSIONS_OFFSET = len(_PNG_SIGNATURE) + _PNG_CHUNK_HEADER.size
+_BITMAP_HEADER_SIZE = struct.Struct("<I")
+_BITMAP_CORE_DIMENSIONS = struct.Struct("<IHH")
+_BITMAP_INFO_DIMENSIONS = struct.Struct("<Iii")
+_BITMAP_CORE_HEADER_BYTES = 12
+_BITMAP_INFO_HEADER_BYTES = 40
+_ICO_HEIGHT_COMPONENTS = 2  # Color bitmap followed by transparency mask.
 
 
 def _validate_raster_dimensions(width: int, height: int) -> None:
@@ -42,31 +54,39 @@ def _validate_ico_dimensions(icon_path: Path) -> None:
     # Pillow's ICO plugin loads pixels inside Image.open. Check embedded headers first,
     # including their actual dimensions rather than trusting the one-byte directory sizes.
     with icon_path.open("rb") as source:
-        header = source.read(6)
+        header = source.read(_ICO_HEADER.size)
         if not header.startswith(b"\x00\x00\x01\x00"):
             return
 
-        count = struct.unpack_from("<H", header, 4)[0]
-        entries = source.read(count * 16)
-        if len(entries) != count * 16:
+        _reserved, _kind, count = _ICO_HEADER.unpack(header)
+        entries = source.read(count * _ICO_ENTRY.size)
+        if len(entries) != count * _ICO_ENTRY.size:
             raise ValueError("Truncated ICO directory")
 
-        for index in range(count):
-            offset = struct.unpack_from("<I", entries, index * 16 + 12)[0]
+        for (
+            _width,
+            _height,
+            _colors,
+            _reserved,
+            _planes,
+            _depth,
+            _size,
+            offset,
+        ) in _ICO_ENTRY.iter_unpack(entries):
             source.seek(offset)
-            frame_header = source.read(24)
+            frame_header = source.read(_PNG_DIMENSIONS_OFFSET + _PNG_DIMENSIONS.size)
 
-            if frame_header.startswith(b"\x89PNG\r\n\x1a\n"):
-                width, height = struct.unpack_from(">II", frame_header, 16)
+            if frame_header.startswith(_PNG_SIGNATURE):
+                width, height = _PNG_DIMENSIONS.unpack_from(frame_header, _PNG_DIMENSIONS_OFFSET)
             else:
-                header_size = struct.unpack_from("<I", frame_header)[0]
-                if header_size == 12:
-                    width, height = struct.unpack_from("<HH", frame_header, 4)
-                elif header_size >= 40:
-                    width, height = struct.unpack_from("<ii", frame_header, 4)
+                (header_size,) = _BITMAP_HEADER_SIZE.unpack_from(frame_header)
+                if header_size == _BITMAP_CORE_HEADER_BYTES:
+                    _header_size, width, height = _BITMAP_CORE_DIMENSIONS.unpack_from(frame_header)
+                elif header_size >= _BITMAP_INFO_HEADER_BYTES:
+                    _header_size, width, height = _BITMAP_INFO_DIMENSIONS.unpack_from(frame_header)
                 else:
                     raise ValueError("Invalid ICO bitmap header")
-                height //= 2  # DIB height includes the transparency mask.
+                height //= _ICO_HEIGHT_COMPONENTS
 
             _validate_raster_dimensions(width, height)
 
@@ -102,7 +122,6 @@ class MetadataFetcher:
                         headers=self.HEADERS,
                         destination=destination,
                         max_bytes=MAX_ICON_BYTES,
-                        timeout=10,
                     )
 
                 suffix = self._guess_suffix(icon_url, content_type)
@@ -191,7 +210,7 @@ class MetadataFetcher:
         if image.isNull():
             raise ValueError("Could not allocate SVG output")
 
-        image.fill(0)
+        image.fill(Qt.GlobalColor.transparent)
         painter = QPainter(image)
         if not painter.isActive():
             raise ValueError("Could not paint SVG output")
@@ -224,7 +243,6 @@ class MetadataFetcher:
                     headers=self.HEADERS,
                     destination=destination,
                     max_bytes=MAX_HTML_BYTES,
-                    timeout=10,
                 )
 
                 destination.seek(0)

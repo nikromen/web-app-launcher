@@ -1,4 +1,5 @@
 import QtQuick
+import "UiMetrics.mjs" as UiMetrics
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -6,13 +7,13 @@ Dialog {
     id: iconPickerDialog
     title: "Choose Icon"
     modal: true
-    width: Math.min(Screen.desktopAvailableWidth * 0.5, 560)
-    padding: 24
+    width: Math.min(Screen.desktopAvailableWidth * UiMetrics.iconPickerWidthFraction, UiMetrics.iconPickerMaxWidth)
+    padding: UiMetrics.dialogPadding
 
     property var iconPaths: []
 
     contentItem: ColumnLayout {
-        spacing: 16
+        spacing: UiMetrics.spaceLarge
         width: iconPickerDialog.availableWidth
 
         Label {
@@ -23,27 +24,27 @@ Dialog {
 
         Frame {
             Layout.fillWidth: true
-            Layout.preferredHeight: 220
+            Layout.preferredHeight: UiMetrics.iconPickerGridHeight
 
             GridView {
                 id: iconsGrid
                 anchors.fill: parent
-                anchors.margins: 8
-                cellWidth: 96
-                cellHeight: 96
+                anchors.margins: UiMetrics.spaceCompact
+                cellWidth: UiMetrics.iconPickerCellSize
+                cellHeight: UiMetrics.iconPickerCellSize
                 clip: true
                 model: iconPickerDialog.iconPaths
 
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                 delegate: ItemDelegate {
-                    width: iconsGrid.cellWidth - 8
-                    height: iconsGrid.cellHeight - 8
+                    width: iconsGrid.cellWidth - UiMetrics.spaceCompact
+                    height: iconsGrid.cellHeight - UiMetrics.spaceCompact
                     highlighted: iconsGrid.currentIndex === index
 
                     contentItem: Image {
                         anchors.fill: parent
-                        anchors.margins: 8
+                        anchors.margins: UiMetrics.spaceCompact
                         source: modelData
                         fillMode: Image.PreserveAspectFit
                         cache: false

@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_BYTES = 16 * 1024  # Including the terminating newline.
 REQUEST_TIMEOUT_MS = 2000
+SOCKET_PROBE_TIMEOUT_SECONDS = 0.2
 
 
 class TrayCommandError(RuntimeError):
@@ -130,7 +131,7 @@ class TrayService(QObject):
         # ECONNREFUSED result is sufficient evidence of an abandoned socket.
         try:
             with local_socket.socket(local_socket.AF_UNIX, local_socket.SOCK_STREAM) as probe:
-                probe.settimeout(0.2)
+                probe.settimeout(SOCKET_PROBE_TIMEOUT_SECONDS)
                 probe.connect(str(self._socket_path))
         except OSError as exc:
             if exc.errno != errno.ECONNREFUSED:
@@ -262,7 +263,7 @@ def send_tray_command(
     command: TrayCommand,
     config_dir: Path,
     app_uuid: str = "",
-    timeout_ms: int = 2000,
+    timeout_ms: int = REQUEST_TIMEOUT_MS,
 ) -> bool:
     """Return False before sending; raise on rejection or an unconfirmed outcome."""
     deadline = QDeadlineTimer(max(0, timeout_ms), Qt.TimerType.PreciseTimer)

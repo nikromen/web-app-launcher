@@ -1,4 +1,5 @@
 import QtQuick
+import "UiMetrics.mjs" as UiMetrics
 import QtQuick.Controls
 
 ToolButton {
@@ -6,8 +7,8 @@ ToolButton {
 
     required property string tipText
 
-    implicitWidth: 20
-    implicitHeight: 20
+    implicitWidth: UiMetrics.helpTipSize
+    implicitHeight: UiMetrics.helpTipSize
     padding: 0
     hoverEnabled: true
 
@@ -15,7 +16,7 @@ ToolButton {
         text: "?"
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
-        font.pixelSize: 12
+        font.pixelSize: UiMetrics.fontSecondary
         font.weight: Font.Bold
         color: control.hovered ? palette.highlightedText : palette.buttonText
     }
@@ -24,10 +25,10 @@ ToolButton {
         radius: width / 2
         color: control.hovered ? palette.highlight : palette.button
         border.color: control.hovered ? palette.highlight : palette.mid
-        border.width: 1
+        border.width: UiMetrics.borderWidth
     }
 
     ToolTip.visible: control.hovered
     ToolTip.text: tipText
-    ToolTip.delay: 300
+    ToolTip.delay: UiMetrics.tooltipDelayMs
 }

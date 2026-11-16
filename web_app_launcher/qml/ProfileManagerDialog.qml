@@ -1,4 +1,5 @@
 import QtQuick
+import "UiMetrics.mjs" as UiMetrics
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -8,12 +9,12 @@ Dialog {
     title: "Browser Profile Manager"
     modal: true
 
-    width: Math.min(Screen.desktopAvailableWidth * 0.5, 720)
-    height: Math.min(Screen.desktopAvailableHeight * 0.6, 620)
-    padding: 24
+    width: Math.min(Screen.desktopAvailableWidth * UiMetrics.profileManagerWidthFraction, UiMetrics.profileManagerMaxWidth)
+    height: Math.min(Screen.desktopAvailableHeight * UiMetrics.profileManagerHeightFraction, UiMetrics.profileManagerMaxHeight)
+    padding: UiMetrics.dialogPadding
 
     contentItem: ColumnLayout {
-        spacing: 16
+        spacing: UiMetrics.spaceLarge
         width: profileManagerDialog.availableWidth
         height: profileManagerDialog.availableHeight
 
@@ -33,7 +34,7 @@ Dialog {
 
             ListView {
                 id: profilesListView
-                spacing: 10
+                spacing: UiMetrics.spaceMedium
                 width: parent.width
                 implicitHeight: contentHeight
                 boundsBehavior: Flickable.StopAtBounds
@@ -46,32 +47,32 @@ Dialog {
                     required property string description
 
                     width: profilesListView.width
-                    height: profileCard.implicitHeight + 24
-                    radius: 8
+                    height: profileCard.implicitHeight + UiMetrics.profileCardVerticalPadding
+                    radius: UiMetrics.cardCornerRadius
                     color: palette.base
                     border.color: palette.mid
-                    border.width: 1
+                    border.width: UiMetrics.borderWidth
 
                     RowLayout {
                         id: profileCard
                         anchors.fill: parent
-                        anchors.margins: 12
-                        spacing: 16
+                        anchors.margins: UiMetrics.spaceRegular
+                        spacing: UiMetrics.spaceLarge
 
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: 4
+                            spacing: UiMetrics.spaceTiny
 
                             Label {
                                 text: name
-                                font.pixelSize: 15
+                                font.pixelSize: UiMetrics.fontCardTitle
                                 font.weight: Font.DemiBold
                                 Layout.fillWidth: true
                             }
                             Label {
                                 text: description
-                                font.pixelSize: 12
-                                opacity: 0.75
+                                font.pixelSize: UiMetrics.fontSecondary
+                                opacity: UiMetrics.opacitySecondary
                                 Layout.fillWidth: true
                                 wrapMode: Text.WordWrap
                             }
@@ -103,14 +104,14 @@ Dialog {
             Layout.fillWidth: true
             visible: profilesListView.count === 0
             text: "No profiles yet.\nClick \"Create Profile\" to add one."
-            font.pixelSize: 14
-            opacity: 0.6
+            font.pixelSize: UiMetrics.fontBody
+            opacity: UiMetrics.opacityEmptyState
             horizontalAlignment: Text.AlignHCenter
         }
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
+            spacing: UiMetrics.spaceRegular
             Button {
                 text: "Create Profile"
                 icon.name: "list-add"

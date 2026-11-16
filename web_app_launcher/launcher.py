@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from typing import TYPE_CHECKING
 
+from web_app_launcher.constants import JSON_INDENT
 from web_app_launcher.models import resolve_launch_profile
 from web_app_launcher.utils.browser_manager import BrowserManager
 from web_app_launcher.utils.config_manager import ConfigManager
@@ -64,7 +65,7 @@ class AppLauncher:
             logger.info("Found app: %s", app.name)
             logger.debug(
                 "Full app configuration: %s",
-                json.dumps(app.model_dump(mode="json"), indent=4, default=str),
+                json.dumps(app.model_dump(mode="json"), indent=JSON_INDENT, default=str),
             )
 
             if not self.browser_manager.installed_browsers:

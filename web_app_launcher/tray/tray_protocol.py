@@ -4,6 +4,8 @@ from typing import TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+from web_app_launcher.constants import TRAY_SESSION_TOKEN_HEX_LENGTH
+
 _MessageT = TypeVar("_MessageT", bound="_TrayMessage")
 
 
@@ -34,7 +36,12 @@ class TrayRequest(_TrayMessage):
     model_config = ConfigDict(strict=True)
 
     cmd: TrayCommand = Field(strict=False)
-    token: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]+$", repr=False)
+    token: str = Field(
+        min_length=TRAY_SESSION_TOKEN_HEX_LENGTH,
+        max_length=TRAY_SESSION_TOKEN_HEX_LENGTH,
+        pattern=r"^[0-9a-f]+$",
+        repr=False,
+    )
     uuid: str = Field(default="", validate_default=True)
 
     @field_validator("uuid")

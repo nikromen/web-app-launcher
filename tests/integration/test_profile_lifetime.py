@@ -9,21 +9,34 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QLockFile
 
+CLEANUP_TIMEOUT_SECONDS = 3
+POLL_INTERVAL_SECONDS = 0.01
+PROCESS_STILL_RUNNING_WINDOW_SECONDS = 0.15
+PROCESS_TIMEOUT_SECONDS = 5
+STARTUP_TIMEOUT_SECONDS = 3
+WORKER_STILL_RUNNING_WINDOW_SECONDS = 0.25
+UNRELATED_PROCESS_LIFETIME_SECONDS = 15
+
+
 HELPER = """
 import os
 import sys
 import time
 from pathlib import Path
 
+HELPER_RELEASE_TIMEOUT_SECONDS = 10
+POLL_INTERVAL_SECONDS = 0.01
+
+
 session, root = map(Path, sys.argv[1:])
 try:
     assert (session / "prefs.js").read_text() == "template"
     (session / "browser-state").write_text("session only")
     (root / "helper-ready").write_text(str(os.getpid()))
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + HELPER_RELEASE_TIMEOUT_SECONDS
     while not (root / "release").exists():
         assert time.monotonic() < deadline, "Browser helper was not released"
-        time.sleep(0.01)
+        time.sleep(POLL_INTERVAL_SECONDS)
     assert session.is_dir(), "Profile was removed while the browser was running"
 finally:
     (root / "helper-done").touch()
@@ -36,18 +49,22 @@ import sys
 import time
 from pathlib import Path
 
+HELPER_RELEASE_TIMEOUT_SECONDS = 10
+POLL_INTERVAL_SECONDS = 0.01
+
+
 session, root, helper, mode = sys.argv[1:]
 root = Path(root)
 (root / "wrapper-pid").write_text(str(os.getpid()))
 subprocess.Popen([sys.executable, "-c", helper, session, str(root)])
-deadline = time.monotonic() + 10
+deadline = time.monotonic() + HELPER_RELEASE_TIMEOUT_SECONDS
 while not (root / "helper-ready").exists():
     assert time.monotonic() < deadline
-    time.sleep(0.01)
+    time.sleep(POLL_INTERVAL_SECONDS)
 if mode == "wrapper":
     while not (root / "wrapper-release").exists():
         assert time.monotonic() < deadline
-        time.sleep(0.01)
+        time.sleep(POLL_INTERVAL_SECONDS)
 """
 
 WORKER = """
@@ -76,12 +93,19 @@ from web_app_launcher.utils.config_manager import ConfigManager
 from web_app_launcher.utils.path_manager import PathManager
 from web_app_launcher.utils.profile_fork import create_ephemeral_profile
 
+CLEANUP_TIMEOUT_SECONDS = 3
+POLL_INTERVAL_SECONDS = 0.01
+PROCESS_TIMEOUT_SECONDS = 5
+PR_SET_CHILD_SUBREAPER = 36
+STARTUP_TIMEOUT_SECONDS = 3
+
+
 mode, root, helper, wrapper = sys.argv[1:]
 root = Path(root)
 wrapped = "wrapper" in mode
 if wrapped:
     # Adopt the wrapper's child so this test can observe and reap its zombie.
-    assert ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0
+    assert ctypes.CDLL(None, use_errno=True).prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == 0
 qt_app = QApplication([])
 qt_app.setApplicationName(APP_NAME)
 paths = PathManager()
@@ -115,7 +139,7 @@ if wrapped and mode != "wrapper":
     real_popen = subprocess.Popen
     def spawn_finished_wrapper(*args, **kwargs):
         process = real_popen(*args, **kwargs)
-        process.wait(timeout=5)
+        process.wait(timeout=PROCESS_TIMEOUT_SECONDS)
         return process
     launcher.subprocess.Popen = spawn_finished_wrapper
 if mode == "wrapper_watcher_error":
@@ -159,10 +183,10 @@ else:
         result = main.run_app.callback(app.app_uuid)
 
 if wrapped:
-    deadline = time.monotonic() + 3
+    deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
     while not (root / "helper-ready").exists():
         assert time.monotonic() < deadline, "Wrapper did not start its child"
-        time.sleep(0.01)
+        time.sleep(POLL_INTERVAL_SECONDS)
 
 print(json.dumps({"result": result, "session": (root / "session").read_text(),
                   "template": str(template), "sibling": str(sibling),
@@ -174,7 +198,7 @@ if wrapped:
     try:
         for watcher in threading.enumerate():
             if watcher is not threading.main_thread() and not watcher.daemon:
-                watcher.join(timeout=3)
+                watcher.join(timeout=CLEANUP_TIMEOUT_SECONDS)
                 assert not watcher.is_alive(), "Zombie kept cleanup watcher alive"
         if mode != "wrapper_watcher_error":
             assert Path(f"/proc/{child_pid}/stat").read_text().rsplit(")", 1)[1].split()[0] == "Z"
@@ -186,9 +210,9 @@ if wrapped:
 
 
 def _wait_for_file(path):
-    deadline = time.monotonic() + 3
+    deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
     while not path.exists() and time.monotonic() < deadline:
-        time.sleep(0.01)
+        time.sleep(POLL_INTERVAL_SECONDS)
     assert path.exists(), f"Helper did not create {path}"
 
 
@@ -223,11 +247,11 @@ def launcher_worker(tmp_path):
             env=env,
         )
         processes.append(process)
-        readable, _, _ = select.select([process.stdout], [], [], 5)
+        readable, _, _ = select.select([process.stdout], [], [], PROCESS_TIMEOUT_SECONDS)
         assert readable, "Launcher did not return"
         line = process.stdout.readline()
         if not line:
-            _, errors = process.communicate(timeout=3)
+            _, errors = process.communicate(timeout=CLEANUP_TIMEOUT_SECONDS)
             pytest.fail(f"Launcher worker exited with {process.returncode}:\n{errors}")
         return process, json.loads(line)
 
@@ -236,11 +260,11 @@ def launcher_worker(tmp_path):
     (tmp_path / "wrapper-release").touch()
     for process in processes:
         try:
-            process.communicate(timeout=5)
+            process.communicate(timeout=PROCESS_TIMEOUT_SECONDS)
         finally:
             if process.poll() is None:
                 process.kill()
-                process.communicate(timeout=3)
+                process.communicate(timeout=CLEANUP_TIMEOUT_SECONDS)
     if (tmp_path / "helper-ready").exists():
         _wait_for_file(tmp_path / "helper-done")
 
@@ -259,7 +283,7 @@ def test_cleanup_survives_main_return_and_gui_shutdown(mode, launcher_worker, tm
     assert (template / "prefs.js").read_text(encoding="utf-8") == "template"
     assert (sibling / "keep").read_text(encoding="utf-8") == "other session"
     with pytest.raises(subprocess.TimeoutExpired):
-        process.wait(timeout=0.15)
+        process.wait(timeout=PROCESS_STILL_RUNNING_WINDOW_SECONDS)
 
     # The watcher may keep Python alive, but no dormant tray server may remain.
     assert not state["is_server"]
@@ -270,7 +294,7 @@ def test_cleanup_survives_main_return_and_gui_shutdown(mode, launcher_worker, tm
     lock.unlock()
 
     (tmp_path / "release").touch()
-    _, errors = process.communicate(timeout=5)
+    _, errors = process.communicate(timeout=PROCESS_TIMEOUT_SECONDS)
     assert process.returncode == 0, errors
     assert (tmp_path / "helper-done").exists()
     assert not session.exists()
@@ -284,7 +308,8 @@ def test_cleanup_survives_main_return_and_gui_shutdown(mode, launcher_worker, tm
 )
 def test_cleanup_waits_for_wrapper_group_including_fast_exit(mode, launcher_worker, tmp_path):
     unrelated = subprocess.Popen(
-        [sys.executable, "-c", "import time; time.sleep(15)"], start_new_session=True
+        [sys.executable, "-c", f"import time; time.sleep({UNRELATED_PROCESS_LIFETIME_SECONDS})"],
+        start_new_session=True,
     )
     try:
         worker, state = launcher_worker(mode)
@@ -297,16 +322,16 @@ def test_cleanup_waits_for_wrapper_group_including_fast_exit(mode, launcher_work
         assert os.getpgid(child_pid) == wrapper_pid
         assert os.getpgid(unrelated.pid) != wrapper_pid
         (tmp_path / "wrapper-release").touch()
-        deadline = time.monotonic() + 3
+        deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
         while Path(f"/proc/{wrapper_pid}").exists() and time.monotonic() < deadline:
-            time.sleep(0.01)
+            time.sleep(POLL_INTERVAL_SECONDS)
         assert not Path(f"/proc/{wrapper_pid}").exists(), "Wrapper was not reaped"
         with pytest.raises(subprocess.TimeoutExpired):
-            worker.wait(timeout=0.25)
+            worker.wait(timeout=WORKER_STILL_RUNNING_WINDOW_SECONDS)
         assert session.is_dir(), "Wrapper exit removed the live child's profile"
 
         (tmp_path / "release").touch()
-        _, errors = worker.communicate(timeout=5)
+        _, errors = worker.communicate(timeout=PROCESS_TIMEOUT_SECONDS)
         assert worker.returncode == 0, errors
         assert session.exists() is (mode == "wrapper_watcher_error")
         assert (Path(state["template"]) / "prefs.js").read_text() == "template"
@@ -314,4 +339,4 @@ def test_cleanup_waits_for_wrapper_group_including_fast_exit(mode, launcher_work
         assert unrelated.poll() is None
     finally:
         unrelated.terminate()
-        unrelated.wait(timeout=3)
+        unrelated.wait(timeout=CLEANUP_TIMEOUT_SECONDS)

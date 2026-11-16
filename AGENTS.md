@@ -34,6 +34,10 @@ These instructions apply to the entire repository. Follow more specific
 - Separate logical sections within functions with a blank line, such as setup,
   validation, processing, and result handling. Keep closely related statements
   together.
+- Avoid magic numbers. Prefer standard library classifications and named platform
+  constants; otherwise define descriptive constants for limits, timing, binary
+  layouts, and presentation values throughout the project. Keep literal test data
+  and self-explanatory indexes, counters, and arithmetic readable.
 - Use precise types for internal interfaces. Use enums for closed command sets
   and the existing Pydantic models for structured messages and validation.
   Avoid accepting arbitrary strings or coercing invalid external field types

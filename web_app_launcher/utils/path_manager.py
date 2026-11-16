@@ -18,12 +18,12 @@ class PathManager:
             raise RuntimeError("No user runtime directory is available")
 
         runtime_dir = Path(location) / APP_NAME
-        runtime_dir.mkdir(mode=0o700, exist_ok=True)
+        runtime_dir.mkdir(mode=stat.S_IRWXU, exist_ok=True)
         info = runtime_dir.lstat()
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
             raise PermissionError(f"Unsafe application runtime directory: {runtime_dir}")
 
-        runtime_dir.chmod(0o700)
+        runtime_dir.chmod(stat.S_IRWXU)
         return runtime_dir
 
     @cached_property

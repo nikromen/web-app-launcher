@@ -1,4 +1,5 @@
 import QtQuick
+import "UiMetrics.mjs" as UiMetrics
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -6,18 +7,18 @@ Dialog {
     id: shortcutsDialog
     title: "Keyboard Shortcuts"
     modal: true
-    width: Math.min(Screen.desktopAvailableWidth * 0.45, 520)
-    padding: 24
+    width: Math.min(Screen.desktopAvailableWidth * UiMetrics.shortcutsWidthFraction, UiMetrics.shortcutsMaxWidth)
+    padding: UiMetrics.dialogPadding
 
     contentItem: ScrollView {
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-        implicitHeight: Math.min(Screen.desktopAvailableHeight * 0.65, contentLayout.implicitHeight)
+        implicitHeight: Math.min(Screen.desktopAvailableHeight * UiMetrics.scrollContentHeightFraction, contentLayout.implicitHeight)
 
         ColumnLayout {
             id: contentLayout
             width: shortcutsDialog.availableWidth
-            spacing: 20
+            spacing: UiMetrics.spaceSection
 
             ShortcutSection {
                 title: "Main Window"
@@ -60,21 +61,21 @@ Dialog {
         property string title
         property var shortcuts: []
 
-        spacing: 8
+        spacing: UiMetrics.spaceCompact
 
         Label {
             text: title
-            font.pixelSize: 14
+            font.pixelSize: UiMetrics.fontBody
             font.weight: Font.DemiBold
         }
 
         Frame {
             Layout.fillWidth: true
-            padding: 12
+            padding: UiMetrics.spaceRegular
 
             ColumnLayout {
                 width: parent.availableWidth
-                spacing: 8
+                spacing: UiMetrics.spaceCompact
 
                 Repeater {
                     model: sectionRoot.shortcuts
@@ -82,13 +83,13 @@ Dialog {
                     RowLayout {
                         required property var modelData
                         Layout.fillWidth: true
-                        spacing: 16
+                        spacing: UiMetrics.spaceLarge
 
                         Label {
                             text: modelData.keys
                             font.family: "monospace"
-                            font.pixelSize: 12
-                            Layout.preferredWidth: 140
+                            font.pixelSize: UiMetrics.fontSecondary
+                            Layout.preferredWidth: UiMetrics.shortcutKeysWidth
                         }
                         Label {
                             text: modelData.action

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from web_app_launcher.constants import APP_ID
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = REPO_ROOT / "data"
 
 

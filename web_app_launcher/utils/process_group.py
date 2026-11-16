@@ -4,6 +4,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Field positions after removing pid and the parenthesized comm from /proc/PID/stat.
+_STAT_STATE_INDEX = 0
+_STAT_PROCESS_GROUP_INDEX = 2
+
 
 def process_group_is_running(process: subprocess.Popen, pgid: int) -> bool | None:
     """Check our session's group; None means cleanup cannot be proven safe."""
@@ -23,7 +27,11 @@ def process_group_is_running(process: subprocess.Popen, pgid: int) -> bool | Non
 
             # comm is parenthesized and can itself contain spaces and ')'.
             fields = stat.rsplit(")", 1)[1].split()
-            if int(fields[2]) == pgid and fields[0] not in {"Z", "X", "x"}:
+            if int(fields[_STAT_PROCESS_GROUP_INDEX]) == pgid and fields[_STAT_STATE_INDEX] not in {
+                "Z",
+                "X",
+                "x",
+            }:
                 return True
 
         return False

@@ -4,6 +4,9 @@ import sys
 
 import pytest
 
+SCENARIO_TIMEOUT_SECONDS = 20
+
+
 CHILD = """
 import os
 import signal
@@ -11,13 +14,16 @@ import sys
 import time
 from pathlib import Path
 
+POLL_INTERVAL_SECONDS = 0.01
+
+
 root, name, ignore = sys.argv[1:]
 root = Path(root)
 if ignore == "yes":
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
 (root / (name + "-ready")).write_text(str(os.getpid()))
 while True:
-    time.sleep(0.01)
+    time.sleep(POLL_INTERVAL_SECONDS)
 """
 
 WRAPPER = """
@@ -26,12 +32,16 @@ import sys
 import time
 from pathlib import Path
 
+POLL_INTERVAL_SECONDS = 0.01
+STARTUP_TIMEOUT_SECONDS = 3
+
+
 root, name, ignore, child = sys.argv[1:]
 subprocess.Popen([sys.executable, "-c", child, root, name, ignore])
-deadline = time.monotonic() + 3
+deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
 while not (Path(root) / (name + "-ready")).exists():
     assert time.monotonic() < deadline, "Child did not start"
-    time.sleep(0.01)
+    time.sleep(POLL_INTERVAL_SECONDS)
 """
 
 WORKER = """
@@ -50,10 +60,23 @@ from web_app_launcher.controllers.main_controller import MainController
 from web_app_launcher.models import Browser, BrowserProfile, WebApp
 from web_app_launcher.tray import tray_manager
 
+CLEANUP_TIMEOUT_SECONDS = 3
+HEARTBEAT_INTERVAL_MS = 10
+INITIAL_STOP_DELAY_MS = 100
+MAX_KILL_DELAY_SECONDS = 7
+MAX_STOP_REQUEST_SECONDS = 0.5
+MIN_HEARTBEATS_DURING_STOP = 10
+MIN_KILL_DELAY_SECONDS = 4.9
+PROCESS_TIMEOUT_SECONDS = 5
+PR_SET_CHILD_SUBREAPER = 36
+REPEATED_STOP_DELAY_MS = 1000
+STOP_WATCHDOG_TIMEOUT_MS = 10000
+
+
 mode, root, wrapper, child = sys.argv[1:]
 root = Path(root)
 # Keep orphaned descendants here so every test child can be reaped explicitly.
-assert ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0
+assert ctypes.CDLL(None, use_errno=True).prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == 0
 qt = QApplication([])
 qt.setQuitOnLastWindowClosed(False)
 manager = tray_manager.TrayManager()
@@ -78,7 +101,7 @@ def record_signal(pgid, sig):
 tray_manager.os.killpg = record_signal
 heartbeats = []
 heartbeat = QTimer()
-heartbeat.setInterval(10)
+heartbeat.setInterval(HEARTBEAT_INTERVAL_MS)
 heartbeat.timeout.connect(lambda: heartbeats.append(time.monotonic()))
 timeout = QTimer()
 timeout.setSingleShot(True)
@@ -98,7 +121,7 @@ try:
         )
         processes.append(process)
         pgid = process.pid
-        process.wait(timeout=5)
+        process.wait(timeout=PROCESS_TIMEOUT_SECONDS)
         assert process.returncode == 0
         child_pid = int((root / (name + "-ready")).read_text())
         child_pids.append(child_pid)
@@ -120,14 +143,14 @@ try:
         manager.running_count_changed.connect(lambda count: qt.quit() if count == 0 else None)
         started = time.monotonic()
         manager.stop_all()
-        assert time.monotonic() - started < 0.5, "Stop blocked the Qt thread"
+        assert time.monotonic() - started < MAX_STOP_REQUEST_SECONDS, "Stop blocked the Qt thread"
         assert manager.running_count() == count, "Stop discarded unconfirmed groups"
 
     # Repeated requests while stopping must preserve the first deadline.
-    QTimer.singleShot(100, manager.stop_all)
-    QTimer.singleShot(1000, manager.stop_all)
+    QTimer.singleShot(INITIAL_STOP_DELAY_MS, manager.stop_all)
+    QTimer.singleShot(REPEATED_STOP_DELAY_MS, manager.stop_all)
     heartbeat.start()
-    timeout.start(10000)
+    timeout.start(STOP_WATCHDOG_TIMEOUT_MS)
     qt.exec()
     assert timeout.isActive(), "Stop did not complete before watchdog timeout"
     assert not manager.has_running_apps()
@@ -141,12 +164,14 @@ try:
         expected = [signal.SIGTERM] if mode == "term" else [signal.SIGTERM, signal.SIGKILL]
         assert [sig for sig, _ in sent] == expected, sent
         if mode != "term":
-            assert 4.9 <= sent[1][1] - sent[0][1] < 7, sent
+            assert MIN_KILL_DELAY_SECONDS <= sent[1][1] - sent[0][1] < MAX_KILL_DELAY_SECONDS, sent
             during_wait = [when for when in heartbeats if sent[0][1] < when < sent[1][1]]
-            assert len(during_wait) > 10, "Qt did not run while waiting to escalate"
+            assert len(during_wait) > MIN_HEARTBEATS_DURING_STOP, (
+                "Qt did not run while waiting to escalate"
+            )
     if mode == "stop_all":
         term_times = [when for _, sig, when in signals if sig == signal.SIGTERM]
-        assert max(term_times) - min(term_times) < 0.5
+        assert max(term_times) - min(term_times) < MAX_STOP_REQUEST_SECONDS
     for pid in child_pids:
         assert Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] == "Z"
 finally:
@@ -158,7 +183,7 @@ finally:
             real_killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-        process.wait(timeout=3)
+        process.wait(timeout=CLEANUP_TIMEOUT_SECONDS)
     # The wrapper might fail before reporting its child; still reap all adoptees.
     while True:
         try:
@@ -189,6 +214,6 @@ def test_tray_stops_wrapper_groups_without_blocking_qt(mode, tmp_path):
         env=env,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=SCENARIO_TIMEOUT_SECONDS,
     )
     assert result.returncode == 0, result.stdout + result.stderr

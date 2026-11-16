@@ -14,13 +14,15 @@ _USER_JS_BLOCK_RE = re.compile(
     rf"{re.escape(USER_JS_START)}.*?{re.escape(USER_JS_END)}\n?",
     re.DOTALL,
 )
+_OPEN_LINKS_IN_NEW_WINDOW = 2
+_UNRESTRICTED_NEW_WINDOW_BEHAVIOR = 0
 _CHROMELESS_USER_JS_BLOCK = f"""{USER_JS_START}
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
 user_pref("browser.tabs.closeWindowWithLastTab", true);
 user_pref("browser.tabs.warnOnClose", false);
 user_pref("browser.tabs.warnOnCloseOtherTabs", false);
-user_pref("browser.link.open_newwindow", 2);
-user_pref("browser.link.open_newwindow.restriction", 0);
+user_pref("browser.link.open_newwindow", {_OPEN_LINKS_IN_NEW_WINDOW});
+user_pref("browser.link.open_newwindow.restriction", {_UNRESTRICTED_NEW_WINDOW_BEHAVIOR});
 {USER_JS_END}
 """
 _RESOURCES_DIR = Path(__file__).resolve().parent.parent / "resources" / "firefox"

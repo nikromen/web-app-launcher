@@ -4,6 +4,8 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
+XDOTOOL_TIMEOUT_SECONDS = 5
+
 
 def try_activate_pid(pid: int) -> bool:
     """Best-effort attempt to raise a window on Linux X11 via xdotool."""
@@ -26,7 +28,7 @@ def _try_xdotool(pid: int) -> bool:
             ["xdotool", "search", "--pid", str(pid)],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=XDOTOOL_TIMEOUT_SECONDS,
             check=False,
         )
         window_ids = [line.strip() for line in result.stdout.splitlines() if line.strip()]
@@ -36,7 +38,7 @@ def _try_xdotool(pid: int) -> bool:
         activate = subprocess.run(
             ["xdotool", "windowactivate", window_ids[-1]],
             capture_output=True,
-            timeout=5,
+            timeout=XDOTOOL_TIMEOUT_SECONDS,
             check=False,
         )
         return activate.returncode == 0

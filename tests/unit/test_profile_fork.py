@@ -11,6 +11,8 @@ from web_app_launcher.utils.profile_fork import (
     watch_process_and_cleanup,
 )
 
+THREAD_JOIN_TIMEOUT_SECONDS = 1
+
 
 def test_copy_profile_tree_copies_files(tmp_path):
     source = tmp_path / "source"
@@ -93,7 +95,7 @@ def test_watch_process_and_cleanup_removes_ephemeral_profile(tmp_path, monkeypat
     )
 
     watcher = watch_process_and_cleanup(process, 4242, path, ephemeral_base)
-    watcher.join(timeout=1)
+    watcher.join(timeout=THREAD_JOIN_TIMEOUT_SECONDS)
     assert not watcher.is_alive()
     process.wait.assert_called_once()
     assert group_running.call_count == 2
@@ -107,7 +109,7 @@ def test_watcher_preserves_profile_and_stops_on_unknown_group_state(tmp_path, mo
         "web_app_launcher.utils.profile_fork.process_group_is_running", group_running
     )
     watcher = watch_process_and_cleanup(MagicMock(), 4242, path, tmp_path)
-    watcher.join(timeout=1)
+    watcher.join(timeout=THREAD_JOIN_TIMEOUT_SECONDS)
     assert not watcher.is_alive()
     group_running.assert_called_once()
     assert path.is_dir()
