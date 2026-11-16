@@ -11,7 +11,11 @@ from web_app_launcher.utils.config_manager import ConfigManager
 from web_app_launcher.utils.firefox_chrome import ensure_profile_chrome_for_app
 from web_app_launcher.utils.path_manager import PathManager
 from web_app_launcher.utils.process_group import process_group_is_running
-from web_app_launcher.utils.profile_fork import cleanup_ephemeral_profile, watch_process_and_cleanup
+from web_app_launcher.utils.profile_fork import (
+    cleanup_ephemeral_profile,
+    ensure_managed_profile_directory,
+    watch_process_and_cleanup,
+)
 
 if TYPE_CHECKING:
     from web_app_launcher.tray.tray_manager import TrayManager
@@ -79,7 +83,11 @@ class AppLauncher:
             logger.info("Using profile: %s -> %s", profile.name, profile.path)
             logger.debug("Profile exists on disk: %s", profile.path.exists())
 
-            if not profile.path.exists():
+            managed = ensure_managed_profile_directory(
+                profile.path,
+                self.path_manager.profiles_dir,
+            )
+            if not managed and not profile.path.exists():
                 logger.info("Creating profile directory: %s", profile.path)
                 profile.path.mkdir(parents=True, exist_ok=True)
 

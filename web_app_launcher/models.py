@@ -6,6 +6,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from web_app_launcher.utils.private_files import ensure_private_directory
 from web_app_launcher.utils.profile_fork import (
     cleanup_ephemeral_profile,
     copy_profile_tree,
@@ -68,9 +69,11 @@ class BrowserProfile(WebAppLauncherBaseModel):
 
     @staticmethod
     def get_profile_path(base_path: Path, profile_uuid: str) -> Path:
-        path = base_path / profile_uuid
-        path.mkdir(parents=True, exist_ok=True)
-        return path
+        if profile_uuid in {"", ".", ".."} or Path(profile_uuid).name != profile_uuid:
+            raise ValueError(f"Invalid profile UUID: {profile_uuid!r}")
+
+        ensure_private_directory(base_path)
+        return ensure_private_directory(base_path / profile_uuid)
 
 
 class WebApp(WebAppLauncherBaseModel):

@@ -7,6 +7,7 @@ from pathlib import Path
 from web_app_launcher.constants import JSON_INDENT
 from web_app_launcher.models import BrowserProfile, WebApp
 from web_app_launcher.utils.path_manager import PathManager
+from web_app_launcher.utils.private_files import atomic_write_private_text, read_private_text
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +19,12 @@ class ConfigManager:
         self.paths = path_manager
 
     def load_apps(self) -> dict[str, WebApp]:
-        if not self.paths.apps_config_file.exists():
+        content = read_private_text(self.paths.apps_config_file)
+        if content is None:
             logger.info("Apps config file does not exist, returning empty dict")
             return {}
 
-        with open(self.paths.apps_config_file, encoding="utf-8") as f:
-            data = json.load(f)
+        data = json.loads(content)
 
         profiles = self.load_profiles()
         apps: dict[str, WebApp] = {}
@@ -44,12 +45,12 @@ class ConfigManager:
         self._write_json(self.paths.apps_config_file, data)
 
     def load_profiles(self) -> dict[str, BrowserProfile]:
-        if not self.paths.profiles_config_file.exists():
+        content = read_private_text(self.paths.profiles_config_file)
+        if content is None:
             logger.info("Profiles config file does not exist, returning empty dict")
             return {}
 
-        with open(self.paths.profiles_config_file, encoding="utf-8") as f:
-            data = json.load(f)
+        data = json.loads(content)
 
         profiles: dict[str, BrowserProfile] = {}
         for profile_uuid, profile_data in data.items():
@@ -110,11 +111,7 @@ class ConfigManager:
 
     @staticmethod
     def _write_json(path: Path, data: dict) -> None:
-        temp_path = path.with_suffix(f"{path.suffix}.tmp")
-        with open(temp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=JSON_INDENT)
-
-        temp_path.replace(path)
+        atomic_write_private_text(path, json.dumps(data, indent=JSON_INDENT))
 
     @staticmethod
     def _safe_extract_member(

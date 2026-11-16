@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QStandardPaths
 
 from web_app_launcher.constants import APP_NAME
+from web_app_launcher.utils.private_files import ensure_private_directory
 
 
 class PathManager:
@@ -43,9 +44,8 @@ class PathManager:
                 ),
             )
             / APP_NAME
-        ).resolve()
-        config_dir.mkdir(parents=True, exist_ok=True)
-        return config_dir
+        )
+        return ensure_private_directory(config_dir)
 
     @cached_property
     def data_dir(self) -> Path:
@@ -56,9 +56,8 @@ class PathManager:
                 ),
             )
             / APP_NAME
-        ).resolve()
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir
+        )
+        return ensure_private_directory(data_dir)
 
     @cached_property
     def apps_dir(self) -> Path:
@@ -76,14 +75,12 @@ class PathManager:
     @cached_property
     def profiles_dir(self) -> Path:
         profiles_dir = self.data_dir / "browser_profiles"
-        profiles_dir.mkdir(parents=True, exist_ok=True)
-        return profiles_dir
+        return ensure_private_directory(profiles_dir)
 
     @cached_property
     def ephemeral_profiles_dir(self) -> Path:
         ephemeral_dir = self.profiles_dir / "ephemeral"
-        ephemeral_dir.mkdir(parents=True, exist_ok=True)
-        return ephemeral_dir
+        return ensure_private_directory(ephemeral_dir)
 
     @cached_property
     def icons_dir(self) -> Path:

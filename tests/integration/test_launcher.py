@@ -1,3 +1,4 @@
+import stat
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,9 +22,13 @@ def test_launch_app_raises_for_missing_app(path_manager):
 
 @pytest.mark.parametrize("profile_mode", [ProfileMode.SHARED, ProfileMode.DEDICATED])
 @pytest.mark.parametrize("tray_enabled", [True, False])
+@pytest.mark.parametrize("managed", [True, False])
+@pytest.mark.parametrize("preexisting", [True, False])
 def test_launch_app_starts_process(
     profile_mode,
     tray_enabled,
+    managed,
+    preexisting,
     path_manager,
     sample_app,
     sample_profile,
@@ -31,6 +36,12 @@ def test_launch_app_starts_process(
 ):
     sample_app.profile_mode = profile_mode
     sample_app.tray_enabled = tray_enabled
+    if managed:
+        sample_profile.path = path_manager.profiles_dir / sample_profile.profile_uuid
+    if preexisting:
+        sample_profile.path.mkdir(parents=True)
+        sample_profile.path.chmod(0o755)
+
     config = ConfigManager(path_manager)
     config.save_profiles({sample_profile.profile_uuid: sample_profile})
     config.save_apps({sample_app.app_uuid: sample_app})
@@ -75,6 +86,10 @@ def test_launch_app_starts_process(
     assert "https://example.com" in command
     assert str(sample_profile.path) in command
     assert not list(path_manager.ephemeral_profiles_dir.iterdir())
+    if managed:
+        assert stat.S_IMODE(sample_profile.path.stat().st_mode) == 0o700
+    elif preexisting:
+        assert stat.S_IMODE(sample_profile.path.stat().st_mode) == 0o755
 
 
 @pytest.fixture
